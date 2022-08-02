@@ -12,7 +12,7 @@ This project contains the code for the DeQuantifi© DQAlgo Backtesting and Algo 
 
         python -m pip install -r requirements.txt
 
-5. The file CryptoPriceDBGateway.toml contains the config. Edit as you see fit. The "CCXT" section defines which exchanges and which markets are retrieved using [CCXT](https://docs.ccxt.com/en/latest/manual.html) descriptors. The "database" section defines the database login details, and "logging" defines the location and threshold level for log files
+5. The file CryptoPriceDBGateway.toml contains the config. You will need to edit to suit your OS (Windows and Posix config are included). The "CCXT" section defines which exchanges and which markets are retrieved using [CCXT](https://docs.ccxt.com/en/latest/manual.html) descriptors. The "database" section defines the database login details, and "logging" defines the location and threshold level for log files
 6. You can now simply run the script and your QuestDB database will be populated with daily historical data from the exchange. The command line output and the log file show you what data has been written to the database. To run the script, type the following from the project directory:
 
         python CryptoPriceDBGateway.py
