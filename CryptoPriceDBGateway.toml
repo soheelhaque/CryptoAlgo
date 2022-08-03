@@ -1,8 +1,8 @@
 [ccxt]
 # Windows
-deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}:\d*:[CP]$', '^ETH\/USD:ETH-\d{6}:\d*:[CP]$']
+#deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}:\d*:[CP]$', '^ETH\/USD:ETH-\d{6}:\d*:[CP]$']
 # Posix
-#deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}-\d*-[CP]$', '^ETH\/USD:ETH-\d{6}-\d*-[CP]$']
+deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}-\d*-[CP]$', '^ETH\/USD:ETH-\d{6}-\d*-[CP]$']
 
 [database]
 user = 'admin'
@@ -13,7 +13,7 @@ database = 'qdb'
 
 [logging]
 # Windows
-filename = '.\\app.log'
+#filename = '.\\app.log'
 # Posix
-#filename = './app.log'
+filename = './app.log'
 level = 'INFO'
