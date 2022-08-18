@@ -1,0 +1,15 @@
+[Unit]
+Description=QuestDB
+Documentation=https://www.questdb.io/docs/introduction
+After=network.target
+RequiresMountsFor=/var/lib/questdb
+
+[Service]
+Type=forking
+Restart=always
+RestartSec=2
+User=ec2-user
+ExecStart=/home/ec2-user/questdb-6.4.3-rt-linux-amd64/bin/questdb.sh start -d /var/lib/questdb
+
+[Install]
+WantedBy=multi-user.target
