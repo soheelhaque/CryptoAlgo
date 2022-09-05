@@ -1,5 +1,5 @@
 #!/bin/bash -xe
-exec > >(tee -i /var/log/restore_questdb_snapshot.log)
+exec > >(tee -i ~/restore_questdb_snapshot.log)
 exec 2>&1
 
 # Instructions

@@ -1,5 +1,5 @@
 #!/bin/bash -xe
-exec > >(tee -i /var/log/install_cryptoalgo.log)
+exec > >(tee -i ~/install_cryptoalgo.log)
 exec 2>&1
 
 # Instructions
