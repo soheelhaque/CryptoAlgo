@@ -1,5 +1,6 @@
 #!/bin/bash -xe
-exec > >(tee /var/log/cryptoalgo-install.log|logger -t user-data -s 2>/dev/console) 2>&1
+exec > >(tee -i /var/log/install_cryptoalgo.log)
+exec 2>&1
 
 # Instructions
 # Add this script to ~/CryptoAlgo/scripts and setup a crontab entry to run this script at reboot
