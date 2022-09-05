@@ -28,4 +28,4 @@ sudo python3 -m pip install -r ~/CryptoAlgo/requirements.txt
 sudo chmod +x ~/CryptoAlgo/Scripts/*
 
 # Add crontab entry to run CryptoAlgo daily at 10am
-crontab -l -u ec2-user | cat - ~/CryptoAlgo/Scripts/cryptoalgo.crontab | crontab -u user -
+crontab -l | cat - ~/CryptoAlgo/Scripts/cryptoalgo.crontab | crontab -
