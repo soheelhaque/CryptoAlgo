@@ -1,6 +1,10 @@
 #!/bin/bash -xe
 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
+# Instructions
+# Add this script to ~/CryptoAlgo/scripts and setup a crontab entry to run this script at reboot
+# Then create an AMI
+
 # Set up parameters
 mount_point=/var/lib/questdb
 volume_type=gp2
