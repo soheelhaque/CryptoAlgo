@@ -1,4 +1,6 @@
 #!/bin/bash -xe
+exec > >(tee -i ~/install_questdb.log)
+exec 2>&1
 
 # Update the box to the latest software
 sudo yum update -y
