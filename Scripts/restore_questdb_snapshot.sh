@@ -48,6 +48,10 @@ aws ec2 modify-instance-attribute --instance-id $instance_id --region $region --
 sudo mkdir -p $mount_point
 sudo mount $device $mount_point
 
+# Add an entry to /etc/fstab so that drive remounts after reboot
+sudo bash -c "grep -q \"$mount_point\" /etc/fstab || printf \"UUID=`lsblk -no UUID $device` $mount_point `lsblk -no FSTYPE $device` defaults, nof
+ail 0 2\" >> /etc/fstab"
+
 # Return status
 if [[ `lsblk -o MOUNTPOINT -nr $device` == *"$mount_point"* ]]
 then
