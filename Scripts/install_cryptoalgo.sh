@@ -18,7 +18,7 @@ sudo yum install git -y
 # Install CryptoAlgo
 cd ~
 rm -rf CryptoAlgo
-git clone https://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@github.com/soheelhaque/CryptoAlgo.git CryptoAlgo
+git clone https://github.com/soheelhaque/CryptoAlgo.git CryptoAlgo
 
 # Install requirements for CryptoAlgo
 sudo yum install -y gcc postgresql-devel
