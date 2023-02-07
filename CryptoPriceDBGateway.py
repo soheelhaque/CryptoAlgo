@@ -10,21 +10,28 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 
 
-def get_ohlcv(exchange: Exchange, market: dict) -> dict:
+OHLCV_TIMESTAMP = 3  # column of human-readable timestamp
+
+
+def get_ohlcv(exchange: Exchange, market: dict) -> list:
 
     if exchange.has['fetchOHLCV']:
         symbol = market['symbol']
         if symbol in exchange.markets:
             time.sleep(exchange.rateLimit / 1000) # time.sleep wants seconds
-            time_from = 1534201200000 # Deribit starts on 14 Aug 2018
+            # time_from = 1534201200000 # Deribit starts on 14 Aug 2018
             ohlcv_page = exchange.fetch_ohlcv(symbol, timeframe='1d', limit=5000)
-            #pp.pprint(ohlv_page)
+            # pp.pprint(ohlv_page)
             #print(datetime.fromtimestamp(ohlv_page[0][0]/1000).strftime("%d %B %Y %H:%M:%S"))
+
             table = []
             for ohlcv_row in ohlcv_page:
+                # print(ohlcv_row)
                 row = []
                 row.append(exchange.id)
                 row.append(symbol)
+                exchange_date = datetime.fromtimestamp(ohlcv_row[0]/1000)
+                row.append(exchange_date)
                 row.extend(ohlcv_row)
                 table.append(row)
             return table
@@ -35,6 +42,7 @@ def check_ohlcv_table_exists(cursor: psycopg2.extensions.cursor):
                         ts TIMESTAMP,
                         Exchange  STRING NOT NULL,
                         MarketSymbol  STRING NOT NULL,
+                        ExchangeDate TIMESTAMP NOT NULL,
                         ExchangeTimestamp LONG NOT NULL,
                         Open  FLOAT,
                         High  FLOAT,
@@ -48,12 +56,12 @@ def update_ohlcv_table(connection: psycopg2.extensions.connection, cursor: psyco
     now = datetime.utcnow()
     rowcount = 0
     for ohlcv_row in ohlcv_table:
-        if ohlcv_row[2] > last_update:
+        if ohlcv_row[OHLCV_TIMESTAMP] > last_update:
             cursor.execute('''
                 INSERT INTO OHLCV
-                VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 ''',
-                (now, ohlcv_row[0], ohlcv_row[1], ohlcv_row[2], ohlcv_row[3], ohlcv_row[4], ohlcv_row[5], ohlcv_row[6], ohlcv_row[7]))
+                (now, ohlcv_row[0], ohlcv_row[1], ohlcv_row[2], ohlcv_row[3], ohlcv_row[4], ohlcv_row[5], ohlcv_row[6], ohlcv_row[7], ohlcv_row[8]))
             rowcount += cursor.rowcount
     connection.commit()
     return rowcount
@@ -70,7 +78,7 @@ def get_ohlcv_last_update_time(cursor: psycopg2.extensions.cursor, exchange_id: 
     return last_update_time_ms[0]
 
 
-def load_config(db_config, ccxt_markets, logging_config):
+def load_config(db_config: dict, ccxt_markets: dict, logging_config: dict) -> None:
     with open("CryptoPriceDBGateway.toml", mode="rb") as cf:
         config = tomli.load(cf)
 
@@ -92,23 +100,34 @@ def load_config(db_config, ccxt_markets, logging_config):
 
 def get_market_symbols(market_id_pattern: str, markets: dict) -> list:
     matching_market_ids = [market_id for market_id in markets.keys() if re.search(market_id_pattern, market_id)]
+    # print("MARKET IDS", markets.keys())
     return matching_market_ids
 
+def filter_swap_market_symbols(markets: dict) -> list:
+    # Windows
+    # deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}:\d*:[CP]$', '^ETH\/USD:ETH-\d{6}:\d*:[CP]$']
+    # Posix
+    # deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}-\d*-[CP]$', '^ETH\/USD:ETH-\d{6}-\d*-[CP]$']
 
-def update_markets(ccxt_markets, connection, cursor):
-    exchange_ids = set(ccxt_markets.keys())
+    return [market_id for market_id in markets.keys() if ":" in market_id]
+
+
+def update_markets(ccxt_markets: dict, connection, cursor) -> None:
+    # exchange_ids = set(ccxt_markets.keys())
+    # print("EXCH ID", ccxt_markets['exchanges'])
+    exchange_ids: dict = ccxt_markets['exchanges']
+
     for exchange_id in exchange_ids:
         if exchange_id in ccxt.exchanges:
             exchange = eval('ccxt.%s ()' % exchange_id)  # Connect to exchange
             markets = exchange.load_markets()  # Load all markets for that exchange
             logger.info('Loaded markets for exchange {}.'.format(exchange_id))
-            market_symbols = []
-            for market_symbol_pattern in ccxt_markets[exchange_id]['markets']:
-                market_symbols += get_market_symbols(market_symbol_pattern, markets)
+
+            market_symbols: list = filter_swap_market_symbols(markets)
             for market_symbol in market_symbols:
                 market = markets[market_symbol]
-                ohlcv_table = get_ohlcv(exchange, market)
-                last_update = get_ohlcv_last_update_time(cursor, exchange_id, market_symbol)
+                ohlcv_table: list = get_ohlcv(exchange, market)
+                last_update: int = get_ohlcv_last_update_time(cursor, exchange_id, market_symbol)
                 if last_update:
                     rows_inserted = update_ohlcv_table(connection, cursor, ohlcv_table, last_update)
                 else:
@@ -117,7 +136,7 @@ def update_markets(ccxt_markets, connection, cursor):
                                                                                  market_symbol))
 
 
-def set_up_logger(config) -> logging.Logger:
+def set_up_logger(config: dict) -> logging.Logger:
     # logger
     logger = logging.getLogger()
     logger.setLevel(logging.getLevelName(config['level']))
@@ -144,34 +163,42 @@ def set_up_logger(config) -> logging.Logger:
 
 if __name__ == "__main__":
 
-    db_config = {}
-    markets = {}
-    logging_config = {}
+    db_config: dict = {}
+    markets: dict = {}
+    logging_config: dict = {}
+
     load_config(db_config, markets, logging_config)
 
-    # logging.basicConfig(filename=logging_config['filename'], filemode='a', format='%(asctime)s - %(message)s',
-    #                     datefmt='%d-%b-%y %H:%M:%S', level=logging.getLevelName(logging_config['level']))
-    # logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
-
-    logger = set_up_logger(logging_config)
+    logger: logging.Logger = set_up_logger(logging_config)
 
     try:
-        # Connect to DB and ensure that table exists
-        connection = None
-        cursor = None
+        # Connect to DB
         db_connection = psycopg2.connect(user=db_config['user'], password=db_config['password'], host=db_config['host'], port=db_config['port'], database=db_config['database'])
+        logger.info('Postgres connection is established.')
+    except Exception as e:
+        logger.exception(f"An exception has occurred: {e}")
+        raise e
+
+    try:
+        # open connection for read/write
         db_cursor = db_connection.cursor()
         logger.info('Postgres connection is opened.')
+    except Exception as e:
+        logger.exception(f"An exception has occurred: {e}")
+        if db_connection:
+            db_connection.close()
+        logger.info('Postgres connection is closed.')
+        raise e
+
+    try:
+        # create table if needed, then update with 'new' records in the timeseries
         check_ohlcv_table_exists(db_cursor)
-
         update_markets(markets, db_connection, db_cursor)
-
-    except Exception as error:
-        logger.exception("An exception has occurred:")
-
+    except Exception as e:
+        logger.exception(f"An exception has occurred: {e}")
     finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+        if db_cursor:
+            db_cursor.close()
+        if db_connection:
+            db_connection.close()
         logger.info('Postgres connection is closed.')
