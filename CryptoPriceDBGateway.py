@@ -97,17 +97,12 @@ def load_config(db_config: dict, ccxt_markets: dict, logging_config: dict) -> No
         logging_config['level'] = config['logging']['level']
 
 
-
 def get_market_symbols(market_id_pattern: str, markets: dict) -> list:
     matching_market_ids = [market_id for market_id in markets.keys() if re.search(market_id_pattern, market_id)]
     # print("MARKET IDS", markets.keys())
     return matching_market_ids
 
 def filter_swap_market_symbols(markets: dict) -> list:
-    # Windows
-    # deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}:\d*:[CP]$', '^ETH\/USD:ETH-\d{6}:\d*:[CP]$']
-    # Posix
-    # deribit.markets = ['^BTC\/USD:BTC$','^ETH\/USD:ETH$', '^BTC\/USD:BTC-\d{6}-\d*-[CP]$', '^ETH\/USD:ETH-\d{6}-\d*-[CP]$']
 
     return [market_id for market_id in markets.keys() if ":" in market_id]
 
@@ -121,6 +116,10 @@ def update_markets(ccxt_markets: dict, connection, cursor) -> None:
         if exchange_id in ccxt.exchanges:
             exchange = eval('ccxt.%s ()' % exchange_id)  # Connect to exchange
             markets = exchange.load_markets()  # Load all markets for that exchange
+            # print(exchange_id)
+            # print(markets.keys())
+            # print(markets['AVAX/USDC:USDC'])
+            # break
             logger.info('Loaded markets for exchange {}.'.format(exchange_id))
 
             market_symbols: list = filter_swap_market_symbols(markets)
@@ -161,6 +160,12 @@ def set_up_logger(config: dict) -> logging.Logger:
     return logger
 
 
+def process_ohlcv_price(db_cursor, db_connection, markets):
+    # create table if needed, then update with 'new' records in the timeseries
+    check_ohlcv_table_exists(db_cursor)
+    update_markets(markets, db_connection, db_cursor)
+
+
 if __name__ == "__main__":
 
     db_config: dict = {}
@@ -168,6 +173,8 @@ if __name__ == "__main__":
     logging_config: dict = {}
 
     load_config(db_config, markets, logging_config)
+
+    markets = {'exchanges': ['binance']}
 
     logger: logging.Logger = set_up_logger(logging_config)
 
@@ -191,9 +198,7 @@ if __name__ == "__main__":
         raise e
 
     try:
-        # create table if needed, then update with 'new' records in the timeseries
-        check_ohlcv_table_exists(db_cursor)
-        update_markets(markets, db_connection, db_cursor)
+        process_ohlcv_price(db_cursor, db_connection, markets)
     except Exception as e:
         logger.exception(f"An exception has occurred: {e}")
     finally:
