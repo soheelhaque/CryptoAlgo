@@ -196,7 +196,7 @@ class DeribitHistory:
         prices = ['open', 'high', 'low', 'close']
 
         for price in prices:
-            underlying = future[price] * strike
+            underlying = strike / future[price]
             mark_price = option[price]
             vol_price = self._calc_implied_vol(strike, underlying, calculation_date, expiry, mark_price, call_put)
             # print("GOT IMPLIED VOLS", option_name, price, vol_price, strike, underlying, calculation_date, expiry, mark_price, call_put)
@@ -347,7 +347,7 @@ class DeribitHistory:
                 'high': strike / tick['high'],
                 'low': strike / tick['low'],
                 'close': strike / tick['close'],
-                'cost': strike / tick['cost'],
+                'cost': tick['cost'],
                 }
 
     def _extract_overlapping_dates(self, historic_futures, historic_options):
@@ -470,7 +470,7 @@ class DeribitHistory:
 
             if (i + 1) % 1000 == 0:
                 self.db_connection.commit()
-                print("COMMITTED VOLS", rowcount, "after", i+1, "out of", len(historic_vols))
+                print("COMMITTING VOLS", rowcount, "after", i+1, "out of", len(historic_vols))
 
         self.db_connection.commit()
         print("COMMITTED VOLS", rowcount, "out of", len(historic_vols))
@@ -530,7 +530,7 @@ class DeribitHistory:
 
             if (i + 1) % 1000 == 0:
                 self.db_connection.commit()
-                print("COMMITTED PRICES", rowcount, "after", i+1, "out of", len(historic_prices_data_table))
+                print("COMMITTING PRICES", rowcount, "after", i+1, "out of", len(historic_prices_data_table))
 
         self.db_connection.commit()
         print("COMMITTED PRICES", rowcount, "out of", len(historic_prices_data_table))
@@ -552,7 +552,7 @@ class DeribitHistory:
                 period = year + month
                 print("PROCESSING PERIOD YYMM", period)
                 historic_prices = self._get_option_and_future_prices(historic_instruments, period)
-                print("PROCESSING PRICES", "futures", len(historic_prices['futures']), "options", len(historic_prices['options']))
+                print("PROCESSING PRICES", "futures count:", len(historic_prices['futures']), "options count:", len(historic_prices['options']))
                 # print("HISTORIC PRICES", historic_prices)
                 # Push the historic price data to the database
                 self._push_historic_prices_to_db(historic_prices)
