@@ -172,7 +172,7 @@ def validate_implied_vol(exchange: str, symbol: str, exchange_date: str) -> None
 if __name__ == "__main__":
 
     exchange = 'deribit'
-    symbol = 'BTC/USD:BTC-230512-33000-C'
-    exchange_date = '2023-04-28 09:00:00'
+    symbol = 'BTC/USD:BTC-240329-120000-C'
+    exchange_date = '2023-06-16 09:00:00'
 
     validate_implied_vol(exchange, symbol, exchange_date)
