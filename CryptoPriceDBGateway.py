@@ -300,6 +300,7 @@ def update_markets(ccxt_markets: dict, connection, cursor) -> None:
     exchange_ids: dict = ccxt_markets['exchanges']
 
     for exchange_id in exchange_ids:
+        print("PROCESS EXCHANGE", exchange_id)
         if exchange_id in ccxt.exchanges:
             exchange = eval('ccxt.%s ()' % exchange_id)  # Connect to exchange
             markets = exchange.load_markets()  # Load all markets for that exchange
