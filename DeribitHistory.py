@@ -325,7 +325,7 @@ class DeribitHistory:
 
             if future['symbol'].split('-')[1].startswith(period):
                 print("FUTURE HISTORY", future['symbol'])
-                time.sleep(0.01)
+                time.sleep(0.02)
 
                 future_history = self._get_ohlcv_day_data(future)
                 # print(future['symbol'], len(future_history))
@@ -336,7 +336,7 @@ class DeribitHistory:
 
             if option['symbol'].split('-')[1].startswith(period):
                 print("OPTION HISTORY", option['symbol'])
-                time.sleep(0.01)
+                time.sleep(0.02)
                 option_history = self._get_ohlcv_day_data(option)
                 # print(option['symbol'], len(option_history))
                 if option_history:
