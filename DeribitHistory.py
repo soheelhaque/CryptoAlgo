@@ -323,7 +323,9 @@ class DeribitHistory:
 
         for future in historic_instruments['futures']:
 
-            # print("FUTURE HISTORY", future['symbol'])
+            print("FUTURE HISTORY", future['symbol'])
+            time.sleep(0.01)
+
             if future['symbol'].split('-')[1].startswith(period):
                 future_history = self._get_ohlcv_day_data(future)
                 # print(future['symbol'], len(future_history))
@@ -331,7 +333,9 @@ class DeribitHistory:
                     historic_future_prices[future['symbol']] = self._transform_to_date(future_history)
 
         for option in historic_instruments['options']:
-            # print("OPTION HISTORY", option['symbol'])
+            print("OPTION HISTORY", option['symbol'])
+            time.sleep(0.01)
+
             if option['symbol'].split('-')[1].startswith(period):
                 option_history = self._get_ohlcv_day_data(option)
                 # print(option['symbol'], len(option_history))
