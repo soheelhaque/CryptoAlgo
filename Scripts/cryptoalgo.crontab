@@ -1,2 +1,2 @@
 # Run CryptoAlgo daily at 10am
-0 10 * * * cd /home/ec2-user/CryptoAlgo && /usr/bin/python3 CryptoPriceDBGateway.py > /dev/null
+0 10 * * * cd /home/ec2-user/CryptoAlgo && venv/bin/python3 CryptoPriceDBGateway.py > /dev/null
