@@ -335,7 +335,7 @@ class DeribitHistory:
         for option in historic_instruments['options']:
 
             if option['symbol'].split('-')[1].startswith(period):
-                print("OPTION HISTORY", option['symbol'])
+                # print("OPTION HISTORY", option['symbol'])
                 time.sleep(0.02)
                 option_history = self._get_ohlcv_day_data(option)
                 # print(option['symbol'], len(option_history))
@@ -453,20 +453,24 @@ class DeribitHistory:
 
     def _push_historic_vols_to_db(self, historic_vols):
 
-        now = datetime.utcnow()
         rowcount = 0
         for i, ohlcv_row in enumerate(historic_vols):
             last_update = self._get_last_vol_update(ohlcv_row['symbol'])
             # print(ohlcv_row['symbol'], last_update)
             if ohlcv_row['timestamp'] > last_update:
+                now = datetime.utcnow()
+                exchange_date = datetime.fromtimestamp(ohlcv_row['timestamp'] / 1000)
+                exchange_day = exchange_date.replace(hour=0, minute=0, second=0, microsecond=0)
                 self.db_cursor.execute(f'''
                         INSERT INTO {self.deribit_ohlcv_vol}
-                        VALUES(%s, %s, %s, %s, %s, 
+                        VALUES(%s, %s, %s, 
+                                %s, %s, %s,
                                 %s, %s, %s, %s, 
                                 %s, %s, %s, %s,
                                 %s, %s);
                         ''',
-                               (now, 'deribit', ohlcv_row['symbol'], ohlcv_row['exchange_date'], ohlcv_row['timestamp'],
+                               (now, 'deribit', ohlcv_row['symbol'],
+                                exchange_day, ohlcv_row['exchange_date'], ohlcv_row['timestamp'],
                                 ohlcv_row['open_vol'], ohlcv_row['high_vol'], ohlcv_row['low_vol'], ohlcv_row['close_vol'],
                                 ohlcv_row['open_strike'], ohlcv_row['high_strike'], ohlcv_row['low_strike'], ohlcv_row['close_strike'],
                                 ohlcv_row['term'], ohlcv_row['volume']))
@@ -515,19 +519,23 @@ class DeribitHistory:
 
         historic_prices_data_table = self._convert_prices_to_data_table(historic_prices)
 
-        now = datetime.utcnow()
         rowcount = 0
         for i, ohlcv_row in enumerate(historic_prices_data_table):
             last_update = self._get_last_price_update(ohlcv_row['symbol'])
             # print(ohlcv_row['symbol'], ohlcv_row['timestamp'], last_update)
             if ohlcv_row['timestamp'] > last_update:
+                now = datetime.utcnow()
+                exchange_date = datetime.fromtimestamp(ohlcv_row['timestamp'] / 1000)
+                exchange_day = exchange_date.replace(hour=0, minute=0, second=0, microsecond=0)
                 self.db_cursor.execute(f'''
                         INSERT INTO {self.deribit_ohlcv}
-                        VALUES(%s, %s, %s, %s, %s, 
+                        VALUES(%s, %s, %s, 
+                                %s, %s, %s,
                                 %s, %s, %s, %s, 
                                 %s);
                         ''',
-                               (now, 'deribit', ohlcv_row['symbol'], ohlcv_row['exchange_date'], ohlcv_row['timestamp'],
+                               (now, 'deribit', ohlcv_row['symbol'],
+                                exchange_day, ohlcv_row['exchange_date'], ohlcv_row['timestamp'],
                                 ohlcv_row['open'], ohlcv_row['high'], ohlcv_row['low'], ohlcv_row['close'],
                                 ohlcv_row['volume']))
                 rowcount += 1
@@ -550,7 +558,7 @@ class DeribitHistory:
         # years = ['17', '18', '19' , '20', '21', '22', '23']
         # months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
         years = ['23']
-        months = ['06', '07', '08', '09', '10', '11', '12']
+        months = ['07', '08', '09', '10', '11', '12']
         for year in years:
             for month in months:
                 period = year + month
@@ -590,6 +598,7 @@ class DeribitHistory:
                             ts TIMESTAMP,
                             Exchange  STRING NOT NULL,
                             MarketSymbol  STRING NOT NULL,
+                            ExchangeDay TIMESTAMP NOT NULL,
                             ExchangeDate TIMESTAMP NOT NULL,
                             ExchangeTimestamp LONG NOT NULL,
                             Open  FLOAT,
@@ -604,6 +613,7 @@ class DeribitHistory:
                             ts TIMESTAMP,
                             Exchange  STRING NOT NULL,
                             MarketSymbol  STRING NOT NULL,
+                            ExchangeDay TIMESTAMP NOT NULL,
                             ExchangeDate TIMESTAMP NOT NULL,
                             ExchangeTimestamp LONG NOT NULL,
                             OpenVol  FLOAT,

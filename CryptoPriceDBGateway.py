@@ -11,10 +11,24 @@ from logging.handlers import TimedRotatingFileHandler
 import QuantLib as ql
 
 
-OHLCV_TIMESTAMP = 3  # column of human-readable timestamp
+OHLCV_TABLE_TIMESTAMP = 4  # column of human-readable timestamp in database
 OHLCV_VOL_TABLE = 'OHLCV_VOL'
+OHLCV_PRICE_TABLE = 'OHLCV'
 
-def get_ohlcv(exchange: Exchange, market: dict) -> list:
+# columnn numbers in returned OHLCV data from exchanges
+OHLCV_EXCHANGE_EXCHANGE = 0
+OHLCV_EXCHANGE_SYMBOL = 1
+OHLCV_EXCHANGE_TIMESTAMP = 2
+OHLCV_EXCHANGE_OPEN = 3
+OHLCV_EXCHANGE_HIGH = 4
+OHLCV_EXCHANGE_LOW = 5
+OHLCV_EXCHANGE_CLOSE = 6
+OHLCV_EXCHANGE_VOLUME = 7
+
+
+def get_exchange_ohlcv(exchange: Exchange, market: dict) -> list:
+    """ Returns Exchange OHLCV Data for given market symbol (if it exists)
+    """
 
     if exchange.has['fetchOHLCV']:
         symbol = market['symbol']
@@ -28,21 +42,18 @@ def get_ohlcv(exchange: Exchange, market: dict) -> list:
             table = []
             for ohlcv_row in ohlcv_page:
                 # print(ohlcv_row)
-                row = []
-                row.append(exchange.id)
-                row.append(symbol)
-                exchange_date = datetime.fromtimestamp(ohlcv_row[0]/1000)
-                row.append(exchange_date)
+                row = [exchange.id, symbol]
                 row.extend(ohlcv_row)
                 table.append(row)
             return table
 
 
 def check_ohlcv_table_exists(cursor: psycopg2.extensions.cursor):
-    cursor.execute('''CREATE TABLE IF NOT EXISTS OHLCV (
+    cursor.execute(f'''CREATE TABLE IF NOT EXISTS '{OHLCV_PRICE_TABLE}' (
                         ts TIMESTAMP,
                         Exchange  STRING NOT NULL,
                         MarketSymbol  STRING NOT NULL,
+                        ExchangeDay TIMESTAMP NOT NULL,
                         ExchangeDate TIMESTAMP NOT NULL,
                         ExchangeTimestamp LONG NOT NULL,
                         Open  FLOAT,
@@ -54,10 +65,11 @@ def check_ohlcv_table_exists(cursor: psycopg2.extensions.cursor):
 
 
 def check_ohlcv_vol_table_exists(cursor: psycopg2.extensions.cursor):
-    cursor.execute(f'''CREATE TABLE IF NOT EXISTS {OHLCV_VOL_TABLE} (
+    cursor.execute(f'''CREATE TABLE IF NOT EXISTS '{OHLCV_VOL_TABLE}' (
                         ts TIMESTAMP,
                         Exchange  STRING NOT NULL,
                         MarketSymbol  STRING NOT NULL,
+                        ExchangeDay TIMESTAMP NOT NULL,
                         ExchangeDate TIMESTAMP NOT NULL,
                         ExchangeTimestamp LONG NOT NULL,
                         OpenVol  FLOAT,
@@ -73,16 +85,27 @@ def check_ohlcv_vol_table_exists(cursor: psycopg2.extensions.cursor):
                 ) timestamp(ts);''')
 
 
-def update_ohlcv_table(connection: psycopg2.extensions.connection, cursor: psycopg2.extensions.cursor, ohlcv_table: list, last_update: int=0) -> int:
+def update_ohlcv_table(connection: psycopg2.extensions.connection, cursor: psycopg2.extensions.cursor, exchange_ohlcv: list, last_update: int=0) -> int:
     now = datetime.utcnow()
     rowcount = 0
-    for ohlcv_row in ohlcv_table:
-        if ohlcv_row[OHLCV_TIMESTAMP] > last_update:
-            cursor.execute('''
-                INSERT INTO OHLCV
-                VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+    for ohlcv_row in exchange_ohlcv:
+        if ohlcv_row[OHLCV_EXCHANGE_TIMESTAMP] > last_update:
+            exchange_date = datetime.fromtimestamp(ohlcv_row[OHLCV_EXCHANGE_TIMESTAMP] / 1000)
+            exchange_day = exchange_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            # print(exchange_day, ohlcv_row)
+            cursor.execute(f'''
+                INSERT INTO '{OHLCV_PRICE_TABLE}'
+                VALUES(%s, 
+                        %s, %s, 
+                        %s, %s, %s, 
+                        %s, %s, %s, %s, 
+                        %s);
                 ''',
-                (now, ohlcv_row[0], ohlcv_row[1], ohlcv_row[2], ohlcv_row[3], ohlcv_row[4], ohlcv_row[5], ohlcv_row[6], ohlcv_row[7], ohlcv_row[8]))
+                (now,
+                 ohlcv_row[OHLCV_EXCHANGE_EXCHANGE], ohlcv_row[OHLCV_EXCHANGE_SYMBOL],
+                 exchange_day, exchange_date, ohlcv_row[OHLCV_EXCHANGE_TIMESTAMP],
+                 ohlcv_row[OHLCV_EXCHANGE_OPEN], ohlcv_row[OHLCV_EXCHANGE_HIGH], ohlcv_row[OHLCV_EXCHANGE_LOW], ohlcv_row[OHLCV_EXCHANGE_CLOSE],
+                 ohlcv_row[OHLCV_EXCHANGE_VOLUME]))
             rowcount += cursor.rowcount
     connection.commit()
     return rowcount
@@ -90,13 +113,14 @@ def update_ohlcv_table(connection: psycopg2.extensions.connection, cursor: psyco
 
 def find_option_underlying(ohlcv_row: list, ohlcv_futures_table: list) -> list:
 
-    result = []
-    exchange_date = ohlcv_row[2]
+    # print("OPTION", ohlcv_row)
+    # print("FUTURES", ohlcv_futures_table)
+    exchange_date = ohlcv_row[OHLCV_EXCHANGE_TIMESTAMP]
     for future in ohlcv_futures_table:
-        if future[2] == exchange_date:
+        if future[OHLCV_EXCHANGE_TIMESTAMP] == exchange_date:
             return future
 
-    return result
+    return []
 
 
 def _calc_implied_vol(strike, underlying, calculation_date: datetime, expiry_date, mark_price, call_put, risk_free_rate=0.0):
@@ -143,7 +167,8 @@ def _calc_implied_vol(strike, underlying, calculation_date: datetime, expiry_dat
             return 400
         if 'expired' in str(e):
             return 0
-        print("ERROR", e)
+
+        print("CALC IMPLIED VOL ERROR", e)
         return None
 
 
@@ -153,26 +178,26 @@ def calc_implied_option_vol(option: list, future: list) -> dict:
     # ohlcv_row['open_vol'], ohlcv_row['high_vol'], ohlcv_row['low_vol'], ohlcv_row['close_vol'],
     # ohlcv_row['open_strike'], ohlcv_row['high_strike'], ohlcv_row['low_strike'], ohlcv_row['close_strike'],
     # ohlcv_row['term'], ohlcv_row['volume']))
-
-
+    # print("OPTION DATA", option)
+    # print("FUTURE DATA", future)
 
     ohlcv_row = {}
-    ohlcv_row['symbol'] = option[1]
-    ohlcv_row['exchange_date'] = option[2]
-    ohlcv_row['timestamp'] = option[3]
-    ohlcv_row['volume'] = option[8]
+    ohlcv_row['symbol'] = option[OHLCV_EXCHANGE_SYMBOL]
+    ohlcv_row['timestamp'] = option[OHLCV_EXCHANGE_TIMESTAMP]
+    ohlcv_row['volume'] = option[OHLCV_EXCHANGE_VOLUME]
 
-    option_data = option[1].split('-')
+    option_data = option[OHLCV_EXCHANGE_SYMBOL].split('-')
     strike = float(option_data[2])
     call_put = option_data[3]
     expiry = option_data[1]
-    calculation_date = option[2]
+
+    calculation_date = datetime.fromtimestamp(option[OHLCV_EXCHANGE_TIMESTAMP] / 1000)
 
     date_exp = datetime.strptime(expiry, '%y%m%d')
     delta = date_exp - calculation_date
     ohlcv_row['term'] = delta.days
 
-    prices = {'open': 4, 'high': 5, 'low': 6, 'close': 7}
+    prices = {'open': OHLCV_EXCHANGE_OPEN, 'high': OHLCV_EXCHANGE_HIGH, 'low': OHLCV_EXCHANGE_LOW, 'close': OHLCV_EXCHANGE_CLOSE}
 
     for price, i in prices.items():
         underlying = future[i]
@@ -182,7 +207,7 @@ def calc_implied_option_vol(option: list, future: list) -> dict:
         if vol_price is None:
             print("GOT BAD VOL WITH ERROR")
             return {}
-        #
+
         # print("GOT IMPLIED VOLS", option[1], price, "vol", vol_price, "strike", strike, "und", underlying, "calc date", calculation_date, "expiry", expiry, "option value", mark_price)
 
         ohlcv_row[price + "_vol"] = vol_price
@@ -202,17 +227,24 @@ def update_ohlcv_vol_row(connection: psycopg2.extensions.connection, cursor: psy
     # print("GOT VOLS", ohlcv_row)
 
     now = datetime.utcnow()
+    exchange_date = datetime.fromtimestamp(ohlcv_row['timestamp'] / 1000)
+    exchange_day = exchange_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    # print("INSERT", exchange_day, ohlcv_row)
+
     cursor.execute(f'''
-                        INSERT INTO {OHLCV_VOL_TABLE}
-                        VALUES(%s, %s, %s, %s, %s,
+                        INSERT INTO '{OHLCV_VOL_TABLE}'
+                        VALUES(%s, %s, %s, 
+                                %s, %s, %s, 
                                 %s, %s, %s, %s,
                                 %s, %s, %s, %s,
                                 %s, %s);
                         ''',
-                               (now, 'deribit', ohlcv_row['symbol'], ohlcv_row['exchange_date'], ohlcv_row['timestamp'],
+                               (now, 'deribit', ohlcv_row['symbol'],
+                                exchange_day, exchange_date, ohlcv_row['timestamp'],
                                 ohlcv_row['open_vol'], ohlcv_row['high_vol'], ohlcv_row['low_vol'], ohlcv_row['close_vol'],
                                 ohlcv_row['open_strike'], ohlcv_row['high_strike'], ohlcv_row['low_strike'], ohlcv_row['close_strike'],
-                                ohlcv_row['term'], ohlcv_row['volume']))
+                                ohlcv_row['term'], ohlcv_row['volume'])
+                   )
 
     return 1
 
@@ -223,7 +255,7 @@ def update_ohlcv_vol_table(connection: psycopg2.extensions.connection, cursor: p
 
     rowcount = 0
     for option_row in ohlcv_option_table:
-        if option_row[OHLCV_TIMESTAMP] > last_update:
+        if option_row[OHLCV_EXCHANGE_TIMESTAMP] > last_update:
 
             # print("INSERT", option_row)
             underlying_row = find_option_underlying(option_row, ohlcv_future_table)
@@ -238,8 +270,8 @@ def update_ohlcv_vol_table(connection: psycopg2.extensions.connection, cursor: p
 
 
 def get_ohlcv_last_update_time(cursor: psycopg2.extensions.cursor, exchange_id: str, market_symbol: str) -> int:
-    cursor.execute('''SELECT max(ExchangeTimestamp)
-                        FROM 'OHLCV'
+    cursor.execute(f'''SELECT max(ExchangeTimestamp)
+                        FROM '{OHLCV_PRICE_TABLE}'
                         WHERE MarketSymbol = %s
                         AND Exchange = %s;
                         ''',
@@ -249,7 +281,7 @@ def get_ohlcv_last_update_time(cursor: psycopg2.extensions.cursor, exchange_id: 
 
 def get_ohlcv_vol_last_update_time(cursor: psycopg2.extensions.cursor, exchange_id: str, market_symbol: str) -> int:
     cursor.execute(f'''SELECT max(ExchangeTimestamp)
-                        FROM {OHLCV_VOL_TABLE}
+                        FROM '{OHLCV_VOL_TABLE}'
                         WHERE MarketSymbol = %s
                         AND Exchange = %s;
                         ''',
@@ -283,8 +315,9 @@ def get_market_symbols(market_id_pattern: str, markets: dict) -> list:
     return matching_market_ids
 
 def filter_swap_market_symbols(markets: dict) -> list:
-
-    return [market_id for market_id in markets.keys() if ":" in market_id]
+    """ Changed filter to include Spot prices (but not deribit type 'combos' eg spreads"""
+    # return [market_id for market_id in markets.keys() if ":" in market_id]
+    return [market_id for market_id in markets.keys() if "/" in market_id]
 
 
 def is_option(symbol: str) -> bool:
@@ -305,20 +338,21 @@ def update_markets(ccxt_markets: dict, connection, cursor) -> None:
             exchange = eval('ccxt.%s ()' % exchange_id)  # Connect to exchange
             markets = exchange.load_markets()  # Load all markets for that exchange
             # print(exchange_id)
-            # print(markets.keys())
-            # print(markets['AVAX/USDC:USDC'])
-            # break
+            # print(list(markets.keys()))
+            # # print(markets['AVAX/USDC:USDC'])
+            # continue
             logger.info('Loaded markets for exchange {}.'.format(exchange_id))
 
             market_symbols: list = filter_swap_market_symbols(markets)
+
             for market_symbol in market_symbols:
                 market = markets[market_symbol]
-                ohlcv_table: list = get_ohlcv(exchange, market)
+                exchange_ohlcv: list = get_exchange_ohlcv(exchange, market)
                 last_update: int = get_ohlcv_last_update_time(cursor, exchange_id, market_symbol)
                 if last_update:
-                    rows_inserted = update_ohlcv_table(connection, cursor, ohlcv_table, last_update)
+                    rows_inserted = update_ohlcv_table(connection, cursor, exchange_ohlcv, last_update)
                 else:
-                    rows_inserted = update_ohlcv_table(connection, cursor, ohlcv_table)
+                    rows_inserted = update_ohlcv_table(connection, cursor, exchange_ohlcv)
 
                 logger.info("{0} price rows inserted for market {2} on exchange {1}.".format(rows_inserted, exchange.name,
                                                                                  market_symbol))
@@ -334,16 +368,16 @@ def update_markets(ccxt_markets: dict, connection, cursor) -> None:
                         except KeyError:
                             # print("Skipping", market_symbol, future_symbol)
                             continue
-                        ohlcv_option_table: list = get_ohlcv(exchange, market)
-                        if not ohlcv_option_table:
-                            # print("skipping - no option prices")
+                        exchange_ohlcv_option: list = get_exchange_ohlcv(exchange, market)
+                        if not exchange_ohlcv_option:
+                            # print("skipping - no option price")
                             continue
-                        ohlcv_future_table: list = get_ohlcv(exchange, future)
+                        exchange_ohlcv_future: list = get_exchange_ohlcv(exchange, future)
                         last_vol_update: int = get_ohlcv_vol_last_update_time(cursor, exchange_id, market_symbol)
-                        # print("LAST UPDATE", market_symbol, len(ohlcv_option_table), last_vol_update, future_symbol, len(ohlcv_future_table))
-                        # print("OPTION TABLE", ohlcv_option_table)
-                        # print("FUTURE TABLE", ohlcv_future_table)
-                        rows_inserted = update_ohlcv_vol_table(connection, cursor, ohlcv_option_table, ohlcv_future_table, last_vol_update)
+                        # print("LAST UPDATE", market_symbol, len(exchange_ohlcv_option), last_vol_update, future_symbol, len(exchange_ohlcv_future))
+                        # print("OPTION TABLE", exchange_ohlcv_option)
+                        # print("FUTURE TABLE", exchange_ohlcv_future)
+                        rows_inserted = update_ohlcv_vol_table(connection, cursor, exchange_ohlcv_option, exchange_ohlcv_future, last_vol_update)
                         logger.info("{0} implied vol rows inserted for market {2} on exchange {1}.".format(rows_inserted, exchange_id,
                                                                                          market_symbol))
 
@@ -399,6 +433,7 @@ if __name__ == "__main__":
 
     load_config(db_config, markets, logging_config)
 
+    # override exhanges
     # markets = {'exchanges': ['binance']}
 
     logger: logging.Logger = set_up_logger(logging_config)
