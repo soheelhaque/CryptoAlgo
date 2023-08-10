@@ -19,6 +19,12 @@ And it will update the Vol historic data as well, by using the price history to 
 
         python CryptoPriceDBGateway.py
 
+7. After running that script, you need to run this one:
+   
+        python DeribitVolHistoryUpdate.py
+
+The first script updates the prices, the second updates the vols.
+
 # Filling in Historic Price Data
 It is known that historic products (ie those that have already expired) do not get included within the CCXT historic price feed.
 That feed only includes history for products that are still tradeable.
@@ -38,10 +44,9 @@ Though, it will be run anyway, the next time there is a normal daily price updat
 # Filling in Historic Vol data
 As well as price history, the database also contains Vol history; this table is populated by running
 a script that examines what option data is in the price table that does not have corresponding
-implied vol data in the vol history table.
+implied vol data in the vol history table. 
+This script needs to run daily, after the price history or Deribit missing data scripts has been run.
 
-This script is meant to only be run once, at initialisation, or exceptionally if there is a gap in the live price feed above.
-
-      python DeribitPriceHistoryDBGateway.py
+      python DeribitVolHistoryUpdate.py
 
 

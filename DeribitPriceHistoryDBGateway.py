@@ -16,7 +16,7 @@ class DeribitPriceHistoryDBGateway:
         of historic prices in the OHLCV table. This module is designed to go back into the history
         of expired products and filling in any gaps.
 
-        As of the date that this module is run, the deribit Historic api only includes expired instruments.
+        The deribit Historic api only includes expired instruments; ie those expired prior to the date this script is run.
         """
 
     def __init__(self):
@@ -25,7 +25,6 @@ class DeribitPriceHistoryDBGateway:
         self.history_url = "https://history.deribit.com"
         self.live_url = "https://www.deribit.com"
         self.deribit_ohlcv = "OHLCV"
-        self.deribit_ohlcv_vol = "OHLCV_VOL"
 
         self.db_config: dict = self._load_config()
         self.db_cursor = None
@@ -192,7 +191,6 @@ class DeribitPriceHistoryDBGateway:
 
         return response.json()['result']
 
-
     def _get_tick_implied_vols(self, option_name, tick, price_data):
         # print("GET IMPLIED VOLS", option_name, tick, price_data)
 
@@ -213,84 +211,6 @@ class DeribitPriceHistoryDBGateway:
             # print("GOT IMPLIED VOLS", option_name, price, vol_price, strike, underlying, calculation_date, expiry, mark_price, call_put)
 
             option[price + "_vol"] = vol_price
-
-    def _calc_implied_vol(self, strike, underlying, calculation_date, expiry_date, mark_price, call_put, risk_free_rate=0.0):
-
-        # print(calculation_date, expiry_date, strike, underlying, mark_price, call_put)
-
-        option_type = ql.Option.Call
-        if call_put == "P":
-            option_type = ql.Option.Put
-
-        def _date_split(calculation_date: str):
-            """ Utility for splitting the date string into parts """
-            # print("DATE", calculation_date)
-            year = int("20" + calculation_date[:2])
-            month = int(calculation_date[2:4])
-            day = int(calculation_date[-2:])
-            return day, month, year
-
-        today = ql.Date(*_date_split(calculation_date))
-
-        ql.Settings.instance().evaluationDate = today
-
-        expiry = ql.Date(*_date_split(expiry_date))
-
-        # The Instrument
-        option = ql.EuropeanOption(ql.PlainVanillaPayoff(option_type, strike),
-                                   ql.EuropeanExercise(expiry))
-        # The Market
-        u = ql.SimpleQuote(underlying)  # set todays value of the underlying
-        r = ql.SimpleQuote(risk_free_rate / 100)  # set risk-free rate
-        sigma = ql.SimpleQuote(0.5)  # set volatility
-        riskFreeCurve = ql.FlatForward(0, ql.TARGET(), ql.QuoteHandle(r), ql.Actual360())
-        volatilityCurve = ql.BlackConstantVol(0, ql.TARGET(), ql.QuoteHandle(sigma), ql.Actual365Fixed())
-        # The Model
-        process = ql.BlackProcess(ql.QuoteHandle(u),
-                                  ql.YieldTermStructureHandle(riskFreeCurve),
-                                  ql.BlackVolTermStructureHandle(volatilityCurve))
-
-        try:
-            return option.impliedVolatility(mark_price * underlying, process) * 100
-        except RuntimeError as e:
-
-            if 'root not' in str(e):
-                return 400
-            if 'expired' in str(e):
-                return 0
-            print("ERROR", e)
-            return None
-
-    # def _check_if_exists(self, ohlcv_data):
-    #
-    #     market_symbol = ohlcv_data['MarketSymbol']
-    #     exchange = ohlcv_data['Exchange']
-    #     exchange_timestamp = ohlcv_data['ExchangeTimestamp']
-    #
-    #     self.db_cursor.execute(f'''SELECT *
-    #                             FROM '{self.deribit_ohlcv_vol}'
-    #                             WHERE MarketSymbol = %s
-    #                             AND Exchange = %s
-    #                             AND ExchangeTimestamp = %s;
-    #                             ''',
-    #                    (market_symbol, exchange, exchange_timestamp))
-    #     record = self.db_cursor.fetchone()
-    #     print(market_symbol, record, ohlcv_data)
-
-    # def _make_ohlcv_table_row(self, market, i, history):
-    #
-    #     return {
-    #         'Exchange': 'deribit',
-    #         'MarketSymbol': market['symbol'],
-    #         'ExchangeDate': datetime.fromtimestamp(history['ticks'][i]/1000),
-    #         'ExchangeTimestamp': history['ticks'][i],
-    #         'Open': history['open'][i],
-    #         'High': history['high'][i],
-    #         'Low': history['low'][i],
-    #         'Close': history['close'][i],
-    #         'Volume': history['volume'][i],
-    #
-    #     }
 
     def _get_option_and_future_instruments(self):
 
@@ -365,75 +285,6 @@ class DeribitPriceHistoryDBGateway:
                 'cost': tick['cost'],
                 }
 
-    def _extract_overlapping_dates(self, historic_futures, historic_options):
-
-        result = {}
-
-        for option, ticks in historic_options.items():
-
-            split = option.split('-')
-            future = split[0] + '-' + split[1]
-            strike = float(split[2])
-            option_type = split[3]
-            expiry = split[1]
-            future_ticks = historic_futures.get(future, {})
-
-            for tick, prices in ticks.items():
-                if tick in future_ticks:
-
-                    if option not in result:
-                        result[option] = {}
-
-                    prices['strike'] = strike
-                    prices['option_type'] = option_type
-                    prices['expiry'] = expiry
-                    prices['calculation_date'] = datetime.fromtimestamp(tick/1000).strftime('%y%m%d')
-                    date_exp = datetime.strptime(prices['expiry'], '%y%m%d')
-                    date_calc = datetime.strptime(prices['calculation_date'], '%y%m%d')
-                    delta = date_exp - date_calc
-                    prices['term'] = delta.days
-                    prices['exchange_date'] = datetime.fromtimestamp(tick / 1000)
-                    result[option][tick] = {
-                        'option': prices,
-                        'future': self._convert_tick_to_percentage_strike(strike, future_ticks[tick])
-                    }
-
-                    # print("MATCHED", result[option][tick])
-
-        return result
-
-    def _convert_prices_to_vols(self, historic_vol_dates) -> list:
-
-        result = {}
-
-        for option, ticks in historic_vol_dates.items():
-            # print("DO VOL", option, len(ticks))
-            for tick, price_data in ticks.items():
-
-                if price_data['option']['term'] > 0:
-                    self._get_tick_implied_vols(option, tick, price_data)
-
-                    if option not in result:
-                        result[option] = {}
-
-                    result[option][tick] = price_data['option']
-
-                    prices = ['open', 'high', 'low', 'close']
-                    for price in prices:
-                        result[option][tick][price + "_strike"] = price_data['future'][price] * 100
-
-        result_table = []
-
-        for option, ticks in result.items():
-            for tick, vols in ticks.items():
-                row = {'symbol': option,
-                       'timestamp': tick,
-                       }
-                row.update(vols)
-                result_table.append(row)
-
-        return result_table
-
     def _get_last_price_update(self, symbol):
 
         self.db_cursor.execute(f'''SELECT max(ExchangeTimestamp)
@@ -447,53 +298,6 @@ class DeribitPriceHistoryDBGateway:
             return 0
 
         return last_update_time_ms[0]
-
-    def _get_last_vol_update(self, symbol):
-
-        self.db_cursor.execute(f'''SELECT max(ExchangeTimestamp)
-                                FROM '{self.deribit_ohlcv_vol}'
-                                WHERE MarketSymbol = '{symbol}'
-                                AND Exchange = 'deribit';
-                                ''')
-        last_update_time_ms = self.db_cursor.fetchone()
-
-        if not last_update_time_ms[0]:
-            return 0
-
-        return last_update_time_ms[0]
-
-    def _push_historic_vols_to_db(self, historic_vols):
-
-        rowcount = 0
-        for i, ohlcv_row in enumerate(historic_vols):
-            last_update = self._get_last_vol_update(ohlcv_row['symbol'])
-            # print(ohlcv_row['symbol'], last_update)
-            if ohlcv_row['timestamp'] > last_update:
-                now = datetime.utcnow()
-                exchange_date = datetime.fromtimestamp(ohlcv_row['timestamp'] / 1000)
-                exchange_day = exchange_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                self.db_cursor.execute(f'''
-                        INSERT INTO {self.deribit_ohlcv_vol}
-                        VALUES(%s, %s, %s, 
-                                %s, %s, %s,
-                                %s, %s, %s, %s, 
-                                %s, %s, %s, %s,
-                                %s, %s);
-                        ''',
-                               (now, 'deribit', ohlcv_row['symbol'],
-                                exchange_day, ohlcv_row['exchange_date'], ohlcv_row['timestamp'],
-                                ohlcv_row['open_vol'], ohlcv_row['high_vol'], ohlcv_row['low_vol'], ohlcv_row['close_vol'],
-                                ohlcv_row['open_strike'], ohlcv_row['high_strike'], ohlcv_row['low_strike'], ohlcv_row['close_strike'],
-                                ohlcv_row['term'], ohlcv_row['volume']))
-                rowcount += 1
-
-            if (i + 1) % 1000 == 0:
-                self.db_connection.commit()
-                print("COMMITTING VOLS", rowcount, "after", i+1, "out of", len(historic_vols))
-
-        self.db_connection.commit()
-        print("COMMITTED VOLS", rowcount, "out of", len(historic_vols))
-        return rowcount
 
     def _convert_prices_to_data_table(self, historic_prices) -> list:
 
@@ -524,7 +328,6 @@ class DeribitPriceHistoryDBGateway:
                 result_table.append(row)
 
         return result_table
-
 
     def _push_historic_prices_to_db(self, historic_prices):
 
@@ -559,7 +362,6 @@ class DeribitPriceHistoryDBGateway:
         print("COMMITTED PRICES", rowcount, "out of", len(historic_prices_data_table))
         return rowcount
 
-
     def _process_historic_ohlcv(self):
 
         historic_instruments = self._get_option_and_future_instruments()
@@ -580,29 +382,7 @@ class DeribitPriceHistoryDBGateway:
                 # Push the historic price data to the database
                 self._push_historic_prices_to_db(historic_prices)
 
-                # calculate implied vols for the matched options
-                historic_vol_dates = self._extract_overlapping_dates(historic_prices['futures'], historic_prices['options'])
-                historic_implied_vols = self._convert_prices_to_vols(historic_vol_dates)
-
-                # push the historic implied vols to the database
-                self._push_historic_vols_to_db(historic_implied_vols)
-
         return
-
-    # def process_historic_ohlcv(self):
-    #     """ Insert all the historic price data for swaps, futures and options for deribit
-    #     """
-    #     try:
-    #         return self._process_historic_ohlcv()
-    #         # process_ohlcv_implied_vol(db_cursor, db_connection, markets)
-    #     except Exception as e:
-    #         print(f"An exception has occurred: {e}")
-    #     finally:
-    #         if self.db_cursor:
-    #             self.db_cursor.close()
-    #         if self.db_connection:
-    #             self.db_connection.close()
-    #         print('Postgres connection is closed.')
 
     def check_ohlcv_price_table_exists(self):
         self.db_cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.deribit_ohlcv} (
@@ -619,56 +399,11 @@ class DeribitPriceHistoryDBGateway:
                             Volume  FLOAT
                     ) timestamp(ts);''')
 
-    def check_ohlcv_vol_table_exists(self):
-        self.db_cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.deribit_ohlcv_vol} (
-                            ts TIMESTAMP,
-                            Exchange  STRING NOT NULL,
-                            MarketSymbol  STRING NOT NULL,
-                            ExchangeDay TIMESTAMP NOT NULL,
-                            ExchangeDate TIMESTAMP NOT NULL,
-                            ExchangeTimestamp LONG NOT NULL,
-                            OpenVol  FLOAT,
-                            HighVol  FLOAT,
-                            LowVol   FLOAT,
-                            CloseVol FLOAT,
-                            OpenStrike  FLOAT,
-                            HighStrike  FLOAT,
-                            LowStrike   FLOAT,
-                            CloseStrike FLOAT,
-                            Term FLOAT,
-                            Volume  FLOAT
-                    ) timestamp(ts);''')
-
-
-# def historic_data(instrument):
-#
-#     expiry = instrument.split('-')[1]
-#     expiry_timestamp = int((datetime.strptime(expiry, '%d%b%y').timestamp() + 86400)*1000)
-#     print(expiry, expiry_timestamp)
-#
-#     session = requests.Session()
-#     history_url = "https://history.deribit.com"
-#     # return expiry, int(expiry_timestamp)
-#
-#     action = "/api/v2/public/get_tradingview_chart_data"
-#     params = {'instrument_name': instrument,
-#               'include_old': 'true',
-#               'start_timestamp': 0,
-#               'end_timestamp': expiry_timestamp,
-#               'resolution': '1D'
-#               }
-#     response = session.get(history_url + action, params=params)
-#
-#     print("RESPONSE", instrument, response.json()['result'])
-#
-#     return response.json()['result']
-
 
 if __name__ == "__main__":
 
     deribit_history = DeribitPriceHistoryDBGateway()
 
-    deribit_history.check_ohlcv_vol_table_exists()
     deribit_history.check_ohlcv_price_table_exists()
 
     results = deribit_history._process_historic_ohlcv()

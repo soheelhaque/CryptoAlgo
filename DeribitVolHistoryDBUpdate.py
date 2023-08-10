@@ -23,7 +23,7 @@ class DeribitVolHistoryDBUpdate:
     def __init__(self):
 
         self.deribit_ohlcv = "OHLCV"
-        self.deribit_ohlcv_vol = "OHLCV_VOL_UPDATE"
+        self.deribit_ohlcv_vol = "OHLCV_VOL"
 
         self.db_config: dict = self._load_config()
         self.db_cursor = None
@@ -546,12 +546,12 @@ class DeribitVolHistoryDBUpdate:
             if (i + 1) % 1000 == 0:
                 # Commit updates as we go along...
                 self.db_connection.commit()
-                print("PROCESSED VOLS", i+1,  "out of", len(missing_option_vols), "with", succeded, "successes and", failed, "failures (vol>400)")
+                print("PROCESSED VOLS", i+1,  "out of", len(missing_option_vols), "with", succeded, "writes and", failed, "skipped (already exists or vol>400)")
 
         # Finish off any residual commits
         self.db_connection.commit()
         print("PROCESSED VOLS", len(missing_option_vols), "out of", len(missing_option_vols))
-        print("TOTAL OF", succeded, "SUCCESSES AND", failed, "FAILURES (probably vol>400)")
+        print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (already exists or (probably) vol>400)")
 
         return
 
