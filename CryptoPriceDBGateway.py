@@ -8,7 +8,7 @@ import tomli
 import re
 import logging
 from logging.handlers import TimedRotatingFileHandler
-import QuantLib as ql
+from DeribitVolHistoryDBUpdate import DeribitVolHistoryDBUpdate
 
 
 OHLCV_TABLE_TIMESTAMP = 4  # column of human-readable timestamp in database
@@ -209,6 +209,8 @@ def process_ohlcv_price(db_cursor, db_connection, markets):
     update_markets(markets, db_connection, db_cursor)
 
 
+prices_updated_success = False
+
 if __name__ == "__main__":
 
     db_config: dict = {}
@@ -243,6 +245,7 @@ if __name__ == "__main__":
 
     try:
         process_ohlcv_price(db_cursor, db_connection, markets)
+        prices_updated_success = True
     except Exception as e:
         logger.exception(f"An exception has occurred: {e}")
     finally:
@@ -251,3 +254,7 @@ if __name__ == "__main__":
         if db_connection:
             db_connection.close()
         logger.info('Postgres connection is closed.')
+
+if prices_updated_success:
+    # Now update Vol History
+    DeribitVolHistoryDBUpdate()._update_historic_vol_data()

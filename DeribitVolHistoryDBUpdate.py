@@ -546,12 +546,12 @@ class DeribitVolHistoryDBUpdate:
             if (i + 1) % 1000 == 0:
                 # Commit updates as we go along...
                 self.db_connection.commit()
-                print("PROCESSED VOLS", i+1,  "out of", len(missing_option_vols), "with", succeded, "writes and", failed, "skipped (already exists or vol>400)")
+                print("PROCESSED VOLS", i+1,  "out of", len(missing_option_vols), "with", succeded, "writes and", failed, "skipped (term=0 or vol>400)")
 
         # Finish off any residual commits
         self.db_connection.commit()
         print("PROCESSED VOLS", len(missing_option_vols), "out of", len(missing_option_vols))
-        print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (already exists or (probably) vol>400)")
+        print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (probably term=0 or vol>400)")
 
         return
 
