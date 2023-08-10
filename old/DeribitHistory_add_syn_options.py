@@ -6,12 +6,12 @@ import psycopg2
 import QuantLib as ql
 
 
-class DeribitHistory_add_deltas:
+class DeribitHistory_add_syn_options:
 
     def __init__(self):
 
-        self.deribit_ohlcv_vol = "OHLCV_VOL"
-        self.deribit_ohlcv_vol_delta = "OHLCV_VOL_DELTA"
+        self.deribit_ohlcv_vol = "OHLCV_VOL_SYN"
+        self.deribit_ohlcv = "OHLCV"
 
         self.db_config: dict = self._load_config()
         self.db_cursor = None
@@ -20,9 +20,11 @@ class DeribitHistory_add_deltas:
 
         self._check_table_exists()
 
+        self._futures_historic_curves = {}
+
     def _check_table_exists(self):
 
-        self.db_cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.deribit_ohlcv_vol_delta} (
+        self.db_cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.deribit_ohlcv_vol} (
                                     ts TIMESTAMP,
                                     Exchange  STRING NOT NULL,
                                     MarketSymbol  STRING NOT NULL,
@@ -73,7 +75,7 @@ class DeribitHistory_add_deltas:
 
         db_config = {}
 
-        with open("DeribitPriceHistoryDBGateway.toml", mode="rb") as cf:
+        with open("../DeribitPriceHistoryDBGateway.toml", mode="rb") as cf:
             config = tomli.load(cf)
 
             # database config
@@ -225,7 +227,7 @@ class DeribitHistory_add_deltas:
 
     def _calc_implied_vol(self, strike, underlying, calculation_date, expiry_date, mark_price, call_put, risk_free_rate=0.0):
 
-        # print(calculation_date, expiry_date, strike, underlying, mark_price, call_put)
+        print("CALC IMPLIED VOL FOR DATE", calculation_date, 'EXPIRY', expiry_date, 'STRIKE', strike, 'FUTURE', underlying, 'MARK', mark_price, 'type', call_put)
 
         option_type = ql.Option.Call
         if call_put == "P":
@@ -233,13 +235,15 @@ class DeribitHistory_add_deltas:
 
         def _date_split(calculation_date: str):
             """ Utility for splitting the date string into parts """
-            # print("DATE", calculation_date)
+            print("DATE", calculation_date)
             year = int("20" + calculation_date[:2])
             month = int(calculation_date[2:4])
             day = int(calculation_date[-2:])
             return day, month, year
 
+        print("DATE SPLIT", *_date_split(calculation_date))
         today = ql.Date(*_date_split(calculation_date))
+        print("TOSAY", today)
 
         ql.Settings.instance().evaluationDate = today
 
@@ -252,8 +256,8 @@ class DeribitHistory_add_deltas:
         u = ql.SimpleQuote(underlying)  # set todays value of the underlying
         r = ql.SimpleQuote(risk_free_rate / 100)  # set risk-free rate
         sigma = ql.SimpleQuote(0.5)  # set volatility
-        riskFreeCurve = ql.FlatForward(0, ql.TARGET(), ql.QuoteHandle(r), ql.Actual360())
-        volatilityCurve = ql.BlackConstantVol(0, ql.TARGET(), ql.QuoteHandle(sigma), ql.Actual365Fixed())
+        riskFreeCurve = ql.FlatForward(0, ql.NullCalendar(), ql.QuoteHandle(r), ql.Actual360())
+        volatilityCurve = ql.BlackConstantVol(0, ql.NullCalendar(), ql.QuoteHandle(sigma), ql.Actual365Fixed())
         # The Model
         process = ql.BlackProcess(ql.QuoteHandle(u),
                                   ql.YieldTermStructureHandle(riskFreeCurve),
@@ -343,6 +347,23 @@ class DeribitHistory_add_deltas:
                 'cost': tick['cost'],
                 }
 
+    def _calculate_term(self, exchange_date, expiry):
+        """ Days from exchange date to expiry date
+        """
+
+        if type(exchange_date) is str:
+            date_calc = datetime.strptime(exchange_date, '%y%m%d')
+        else:
+            date_calc = exchange_date
+
+        if type(expiry) is str:
+            date_exp = datetime.strptime(expiry, '%y%m%d')
+        else:
+            date_exp = expiry
+
+        delta = date_exp - date_calc
+        return delta.days
+
     def _extract_overlapping_dates(self, historic_futures, historic_options):
 
         result = {}
@@ -366,10 +387,7 @@ class DeribitHistory_add_deltas:
                     prices['option_type'] = option_type
                     prices['expiry'] = expiry
                     prices['calculation_date'] = datetime.fromtimestamp(tick/1000).strftime('%y%m%d')
-                    date_exp = datetime.strptime(prices['expiry'], '%y%m%d')
-                    date_calc = datetime.strptime(prices['calculation_date'], '%y%m%d')
-                    delta = date_exp - date_calc
-                    prices['term'] = delta.days
+                    prices['term'] = self._calculate_term(prices['calculation_date'], prices['expiry'])
                     prices['exchange_date'] = datetime.fromtimestamp(tick / 1000)
                     result[option][tick] = {
                         'option': prices,
@@ -536,13 +554,14 @@ class DeribitHistory_add_deltas:
         print("COMMITTED PRICES", rowcount, "out of", len(historic_prices_data_table))
         return rowcount
 
-    def _get_historic_data(self):
-        """ Load all historic data """
+    def _get_historic_vol_data(self):
+        """ Load all historic vol data and return a 'set' for check if vol exists
+         """
 
-        columns = ['ts', 'exchange', 'symbol', 'exchange_day', 'exchange_date', 'exchange_ts',
-                   'open_vol', 'high_vol', 'low_vol', 'close_vol',
-                   'open_strike', 'high_strike', 'low_strike', 'close_strike',
-                   'term', 'volume']
+        # columns = ['ts', 'exchange', 'symbol', 'exchange_day', 'exchange_date', 'exchange_ts',
+        #            'open_vol', 'high_vol', 'low_vol', 'close_vol',
+        #            'open_strike', 'high_strike', 'low_strike', 'close_strike',
+        #            'term', 'volume']
 
         self.query_string = f"SELECT * from {self.deribit_ohlcv_vol}"
 
@@ -551,7 +570,49 @@ class DeribitHistory_add_deltas:
         self.db_cursor.execute(self.query_string)
         result = self.db_cursor.fetchall()
 
-        return result
+        return {(option[1], option[2], option[3]) for option in result}
+
+    def _convert_prices_to_curves(self, future_prices):
+        """ **Currently only do options for BTC / ETH for deribit
+            Convert the futures prices into a 'curve' as a collection
+            of future prices for each exchange date and future expiry term.
+            perpetuals have expiry 0
+        """
+
+        curves = {}
+
+        for future in future_prices:
+
+            # skip if not deribit
+            if future[1] != 'deribit':
+                continue
+
+            split = future[2].split('-')
+            token = split[0]
+
+            # skip non BTC/ETH future price data
+            if token[:3] not in ['BTC', 'ETH']:
+                continue
+
+            try:
+                expiry = split[1]
+            except IndexError:
+                expiry = future[3]
+
+            key = (future[1], token, future[3])
+
+            if key not in curves:
+                curves[key] = {}
+
+            term = self._calculate_term(future[3], expiry)
+
+            if term not in curves[key]:
+                curves[key][term] = future
+
+        return curves
+
+
+
 
     def _min_float(self, x):
 
@@ -653,20 +714,151 @@ class DeribitHistory_add_deltas:
                                 vol[14], vol[15]))
 
 
-    def _process_historic_data(self):
+    def process_missing_syn_options(self):
+        """ Get a list of all the prices we have to find options that we have no vol for.
+            when we find one, calculate the vol entry based on linear interpolation of the associated future price
+        """
 
-        historic_vols = self._get_historic_data()
+        historic_future_curves, historic_option_prices = self._get_historic_price_data()
+        historic_vols = self._get_historic_vol_data()
 
-        for i, vol in enumerate(historic_vols):
-            self._process_delta(vol)
-            # if i > 100000:
-            #     break
+        print("FUTURE CURVES", len(historic_future_curves))
+        print("OPTION PRICES", len(historic_option_prices))
+        print("VOLS", len(historic_vols))
 
-            if (i + 1) % 1000 == 0:
-                self.db_connection.commit()
-                print("COMMITTING VOL DELTAS", i+1,  "out of", len(historic_vols))
+        self._process_historic_data(historic_future_curves, historic_option_prices, historic_vols)
 
-        self.db_connection.commit()
+    def _vol_is_missing(self, option, historic_vols):
+
+        key = (option[1], option[2], option[3])
+
+        return not (key in historic_vols)
+
+    def _get_historic_future_price(self, option_price, historic_future_prices):
+        """ Using option expiry, interpolate on the futures curve for an underlying price
+        """
+
+        # key = option_price
+
+    def _interpolate_future_prices(self, key, term, historic_futures):
+        """ Interpolate the future open/close/high/low prices
+            for the given key and term
+        """
+
+        # print()
+        # print("INTERPOLATE", key, "TERM", term)
+        # print("INTERPOLATE FROM", sorted(historic_futures[key].keys()))
+
+        future_terms = list(sorted(historic_futures[key].keys()))
+        result = None
+
+        if term in future_terms:
+            print("***** THIS IS ODD; TERM", term, "ALREADY EXISTS!", future_terms)
+            result = [historic_futures[key][term][6], historic_futures[key][term][7], historic_futures[key][term][8], historic_futures[key][term][9]]
+            return result
+
+        before_term = None
+        after_term = None
+
+        for future_term in future_terms:
+            if future_term < term:
+                before_term = future_term
+            if future_term > term:
+                after_term = future_term
+                break
+
+        if before_term is None:
+            # return data of first future price
+            print("***** BEFORE; THIS IS VERY ODD!!!")
+            term = 0
+            result = [historic_futures[key][term][6], historic_futures[key][term][7], historic_futures[key][term][8], historic_futures[key][term][9]]
+            return result
+
+        if after_term is None:
+            print("***** AFTER")
+            # return data of final future price
+            term = future_terms[-1]
+            result = [historic_futures[key][term][6], historic_futures[key][term][7], historic_futures[key][term][8], historic_futures[key][term][9]]
+            return result
+
+        # print("LOOKING FOR", term, "BETWEEN", before_term, after_term)
+        factor = (term - before_term)/(after_term - before_term)
+        future = historic_futures[key]
+        result = [future[before_term][6]*(1-factor) + future[after_term][6]*factor,
+                  future[before_term][7]*(1-factor) + future[after_term][7]*factor,
+                  future[before_term][8]*(1-factor) + future[after_term][8]*factor,
+                  future[before_term][9]*(1-factor) + future[after_term][9]*factor,
+        ]
+
+        return result
+
+    def _update_syn_vols_in_db(self, future_prices, option_price):
+        """ Do OHLC Vol Interpolation and write to database
+        """
+
+        calculation_date = option_price[3].strftime('%y%m%d')
+
+        split = option_price[2].split('-')
+        strike = float(split[2])
+        expiry = split[1]
+        call_put = split[3]
+
+        prices = ['open', 'high', 'low', 'close']
+        future = {'open': future_prices[0], 'high': future_prices[1], 'low': future_prices[2], 'close': future_prices[3]}
+        option = {'open': option_price[6], 'high': option_price[7], 'low': option_price[8], 'close': option_price[9]}
+
+        for price in prices:
+            underlying = future[price]
+            mark_price = option[price]
+            vol_price = self._calc_implied_vol(strike, underlying, calculation_date, expiry, mark_price, call_put)
+            option[price + "_vol"] = vol_price
+
+        print("GOT IMPLIED VOLS", option_price[2], option)
+
+    def _process_syn_option(self, option_price, historic_future_prices):
+        """ Calculate the option implied vol from interpolating on the historic future prices
+        """
+
+        split = option_price[2].split('-')
+        future_key = (option_price[1], split[0], option_price[3])
+        expiry = split[1]
+        calc_date = option_price[3]
+
+        term = self._calculate_term(calc_date, expiry)
+
+        if term > 0:
+            # print("PROCESS MISSING OPTION", option_price[2], "ON", option_price[3], "PRICE", option_price[6])
+            future_prices = self._interpolate_future_prices(future_key, term, historic_future_prices)
+            # print("GOT INTERPOLATED PRICES", future_prices)
+
+            if future_prices:
+                self._update_syn_vols_in_db(future_prices, option_price)
+
+        return 0
+
+    def _process_historic_data(self, historic_future_curves, historic_option_prices, historic_vols):
+        """ Skip through all the option prices we have, and if the Vol is missing,
+            calculate the implied vol and add it.
+        """
+
+        missing = 0
+
+        for i, option_price in enumerate(historic_option_prices[1000000:10010000:100]):
+            if self._vol_is_missing(option_price, historic_vols):
+                # print(i, option_price[2])
+                missing += 1
+                self._process_syn_option(option_price, historic_future_curves)
+
+            if i > 10000:
+                break
+
+            # if (i + 1) % 1000 == 0:
+            #     self.db_connection.commit()
+            #     print("COMMITTING VOL DELTAS", i+1,  "out of", len(historic_vols))
+
+        # self.db_connection.commit()
+
+        print("MISSING VOLS COUNT", missing)
 
         return
 
@@ -675,7 +867,10 @@ class DeribitHistory_add_deltas:
 
 if __name__ == "__main__":
 
-    deribit_history = DeribitHistory_add_deltas()
+    deribit_history = DeribitHistory_add_syn_options()
 
-    deribit_history._process_historic_data()
+    deribit_history.process_missing_syn_options()
 
+    # ql.Settings.instance().evaluationDate = ql.Date(12,11,2022)
+    #
+    # print("EVAL", ql.Settings.instance().evaluationDate)
