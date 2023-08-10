@@ -102,7 +102,7 @@ def get_ohlcv_implied_vol_last_update_time(cursor: psycopg2.extensions.cursor, e
 
 
 def load_config(db_config: dict, ccxt_markets: dict, logging_config: dict) -> None:
-    with open("CryptoPriceDBGateway.toml", mode="rb") as cf:
+    with open("../CryptoPriceDBGateway.toml", mode="rb") as cf:
         config = tomli.load(cf)
 
         # database config

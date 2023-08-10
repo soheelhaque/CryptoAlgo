@@ -51,7 +51,7 @@ class DeribitHistory:
 
         db_config = {}
 
-        with open("DeribitHistoryDBGateway.toml", mode="rb") as cf:
+        with open("../DeribitPriceHistoryDBGateway.toml", mode="rb") as cf:
             config = tomli.load(cf)
 
             # database config
