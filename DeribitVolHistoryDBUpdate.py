@@ -108,6 +108,7 @@ class DeribitVolHistoryDBUpdate:
 
         db_config = {}
 
+        # Use same .toml file as the Deribt Price History...
         with open("DeribitPriceHistoryDBGateway.toml", mode="rb") as cf:
             config = tomli.load(cf)
 

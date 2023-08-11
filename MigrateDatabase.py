@@ -3,14 +3,13 @@ import tomli
 from datetime import datetime
 import psycopg2
 import glob
-from time import sleep
 
 
 class MigrateDatabase():
 
     def __init__(self):
         self.version_table = "DB_VERSION"
-        self.config = "DeribitPriceHistoryDBGateway.toml"
+        self.config = "MigrateDatabase.toml"
         self._migration_path = 'migrations/'
 
         self.db_config: dict = self._load_config()
@@ -28,7 +27,6 @@ class MigrateDatabase():
                 self.db_cursor.close()
             if self.db_connection:
                 self.db_connection.close()
-
 
     def _load_config(self) -> dict:
         """ Load up the database configuration .toml file
@@ -88,6 +86,8 @@ class MigrateDatabase():
                             ) timestamp(ts);''')
 
     def _get_migrations_in_order(self) -> dict:
+        """ Returns a list of migration files in version order
+        """
 
         migration_files = glob.glob(self._migration_path + 'migrate_*_*.py')
 
@@ -96,6 +96,8 @@ class MigrateDatabase():
         return dict(sorted(file_order.items()))
 
     def _get_db_version(self) -> float:
+        """ Get current version of database
+        """
 
         self.db_cursor.execute(f'''SELECT max(Version) FROM '{self.version_table}';''')
 
@@ -106,6 +108,8 @@ class MigrateDatabase():
         return last_update_version[0]
 
     def _update_db_version_stamp(self, version: float, script: str) -> None:
+        """ Append a new record to the version history
+        """
 
         now = datetime.utcnow()
 
@@ -119,7 +123,8 @@ class MigrateDatabase():
         self.db_connection.commit()
 
     def _apply_migration_script(self, version: float, script: str) -> None:
-
+        """ Execute the script for this version upgrade
+        """
         # execute script
         with open(script) as f:
             exec(f.read())
@@ -128,7 +133,8 @@ class MigrateDatabase():
         self._update_db_version_stamp(version, script)
 
     def do_migrations(self) -> None:
-
+        """ Iterate through migration scripts, applying any that have not been applied
+        """
         # identify the scripts that could be run, in the correct order
         migration_files = self._get_migrations_in_order()
 
@@ -156,8 +162,7 @@ class MigrateDatabase():
             print("NO UPGRADES FOUND. DATABASE IS UP TO DATE", new_db_version)
 
 
-
 if __name__ == "__main__":
-
+    # Execute migrations
     migrate_database = MigrateDatabase()
 
