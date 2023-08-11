@@ -39,7 +39,7 @@ class DatabaseMigration(ABC):
 
     def __init__(self):
 
-        self.config = "DeribitPriceHistoryDBGateway.toml"
+        self.config = "MigrateDatabase.toml"
 
         self.db_config: dict = self._load_config()
         self.db_cursor = None
