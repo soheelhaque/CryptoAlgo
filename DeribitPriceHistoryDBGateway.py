@@ -3,7 +3,7 @@ import tomli
 import requests
 from datetime import datetime
 import psycopg2
-import QuantLib as ql
+from DeribitVolHistoryDBUpdate import DeribitVolHistoryDBUpdate
 
 
 class DeribitPriceHistoryDBGateway:
@@ -402,25 +402,8 @@ class DeribitPriceHistoryDBGateway:
 
 if __name__ == "__main__":
 
-    deribit_history = DeribitPriceHistoryDBGateway()
+    # Insert any Missing / Expired prices
+    DeribitPriceHistoryDBGateway()._process_historic_ohlcv()
 
-    deribit_history.check_ohlcv_price_table_exists()
-
-    results = deribit_history._process_historic_ohlcv()
-
-    # print("RESULTS", results)
-
-    # for option, ticks in results.items():
-    #     for tick, vols in ticks.items():
-    #         print(option, tick, vols)
-    # history = historic_data('BTC-31MAR17')
-    #
-    # for i, open_price in enumerate(history['open'][:100]):
-    #     date = datetime.fromtimestamp(history['ticks'][i]/1000)
-    #     print(i, date, open_price)
-    #
-    # history = historic_data('BTC-31MAR17-800-C')
-    #
-    # for i, open_price in enumerate(history['open'][:100]):
-    #     date = datetime.fromtimestamp(history['ticks'][i]/1000)
-    #     print(i, date, open_price)
+    # Update Vol History for any new price data
+    DeribitVolHistoryDBUpdate()._update_historic_vol_data()

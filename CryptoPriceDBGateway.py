@@ -205,11 +205,11 @@ def update_vols(db_connection, db_cursor):
 
 def process_ohlcv_price(db_cursor, db_connection, markets):
     # create table if needed, then update with 'new' records in the timeseries
-    check_ohlcv_table_exists(db_cursor)
+    # check_ohlcv_table_exists(db_cursor)
     update_markets(markets, db_connection, db_cursor)
 
 
-prices_updated_success = False
+
 
 if __name__ == "__main__":
 
@@ -245,7 +245,6 @@ if __name__ == "__main__":
 
     try:
         process_ohlcv_price(db_cursor, db_connection, markets)
-        prices_updated_success = True
     except Exception as e:
         logger.exception(f"An exception has occurred: {e}")
     finally:
@@ -255,6 +254,5 @@ if __name__ == "__main__":
             db_connection.close()
         logger.info('Postgres connection is closed.')
 
-if prices_updated_success:
-    # Now update Vol History
+    # Now update Vol History for any new prices
     DeribitVolHistoryDBUpdate()._update_historic_vol_data()

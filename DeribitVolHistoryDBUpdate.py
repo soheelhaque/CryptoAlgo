@@ -30,7 +30,7 @@ class DeribitVolHistoryDBUpdate:
         self.db_connection = None
         self._connectDB(self.db_config)
 
-        self._check_table_exists()
+        self._check_vol_history_table_exists()
 
     def _ensure_datetime(self, given_date) -> datetime:
         """ Ensures given date is a python datetime object.
@@ -53,7 +53,7 @@ class DeribitVolHistoryDBUpdate:
         delta = date_exp - date_calc
         return delta.days
 
-    def _check_table_exists(self) -> None:
+    def _check_vol_history_table_exists(self) -> None:
         """ IF Vol History table does not exist, then create it
         """
 
