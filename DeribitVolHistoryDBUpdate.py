@@ -148,7 +148,7 @@ class DeribitVolHistoryDBUpdate:
 
         """
 
-        print("CONVERTING FUTURE PRICES TO CURVES...")
+        # print("CONVERTING FUTURE PRICES TO CURVES...")
 
         curves = {}
 
@@ -181,8 +181,12 @@ class DeribitVolHistoryDBUpdate:
 
         return curves
 
-    def _get_historic_price_data(self) -> (dict, list):
+    def _get_historic_price_data(self, year: int, month: int) -> (dict, list):
         """ Load all historic price data required for Vol interpolation.
+
+            :param year: the year to process
+            :param month: the month to process
+
             Return dictionary of future curves and list of available option prices
         """
 
@@ -190,9 +194,12 @@ class DeribitVolHistoryDBUpdate:
         #            'open', 'high', 'low', 'close',
         #            'volume']
 
-        print("LOADING PRICE DATA...")
+        # print(f"LOADING PRICE DATA...{year}-{month}")
 
-        self.query_string = f"SELECT * from {self.deribit_ohlcv}"
+        where_clause = self._where_clause(year, month)
+        # print("WHERE CLAUSE", where_clause)
+        self.query_string = f"""SELECT * from {self.deribit_ohlcv} 
+                                where {where_clause}"""
 
         # print(self.query_string)
 
@@ -217,20 +224,27 @@ class DeribitVolHistoryDBUpdate:
 
         return future_curves, option_prices
 
-    def _get_existing_historic_vol_keys(self) -> set:
+    def _get_existing_historic_vol_keys(self, year, month) -> set:
         """ Load all historic vol data and return a 'set' of 'keys'
             to enable fast check if vol record already exists in the database
             key is exchange + symbol + COB Date
+
+            :param year: the year to process
+            :param month: the month to process
+
          """
 
-        print("LOADING EXISTING HISTORIC DATA...")
+        # print(f"LOADING HISTORIC VOL DATA...{year}-{month}")
 
         # columns = ['ts', 'exchange', 'symbol', 'exchange_day', 'exchange_date', 'exchange_ts',
         #            'open_vol', 'high_vol', 'low_vol', 'close_vol',
         #            'open_strike', 'high_strike', 'low_strike', 'close_strike',
         #            'term', 'volume']
 
-        self.query_string = f"SELECT * from {self.deribit_ohlcv_vol}"
+        where_clause = self._where_clause(year, month)
+
+        self.query_string = f"""SELECT * from {self.deribit_ohlcv_vol} 
+                                where {where_clause}"""
 
         # print(self.query_string)
 
@@ -257,20 +271,37 @@ class DeribitVolHistoryDBUpdate:
         # key is exchange + symbol (without strike/option_type, if present) + COB Date
         return (record[1], token, record[3].strftime('%Y-%m-%d'))
 
+    def _where_clause(self, year, month):
+        """ construct a date where clouse to restrict results to a single month
+        """
+        start_date = f"{year}-{month:02}-01"
+        end_month = month + 1 if month < 12 else 1
+        end_year = year if month < 12 else year + 1
+        end_date = f"{end_year}-{end_month:02}-01"
+
+        return f"ExchangeDay >= '{start_date}' AND ExchangeDay < '{end_date}'"
+
     def _vol_record_exists(self, option, historic_vol_keys) -> bool:
         """ Check if an option has already got a record in the historic vols table
         """
         return self._option_key_from_record(option) in historic_vol_keys
 
-    def _get_missing_historic_vols(self) -> (dict, list):
+    def _get_missing_historic_vols(self, year, month) -> (dict, list):
         """ Determine list of option prices that have no corresponding historic Vol data
             and have a chance of being able to calculate a valid historic volatility.
+
+            :param year: the year to process
+            :param month: the month to process
 
             Return list of options to consider, along with the associated historic future curves
         """
 
-        future_curves, option_prices = self._get_historic_price_data()
-        existing_historic_vol_keys = self._get_existing_historic_vol_keys()
+        future_curves, option_prices = self._get_historic_price_data(year, month)
+
+        if not future_curves:
+            return future_curves, option_prices
+
+        existing_historic_vol_keys = self._get_existing_historic_vol_keys(year, month)
 
         # print("EXISTING", list(existing_historic_vol_keys)[:50])
 
@@ -397,6 +428,7 @@ class DeribitVolHistoryDBUpdate:
         # The Instrument
         option = ql.EuropeanOption(ql.PlainVanillaPayoff(option_type, strike),
                                    ql.EuropeanExercise(expiry))
+        # Calculate Implied Vol
         # The Market
         u = ql.SimpleQuote(underlying_price)  # set todays value of the underlying
         r = ql.SimpleQuote(risk_free_rate / 100)  # set risk-free rate
@@ -421,6 +453,7 @@ class DeribitVolHistoryDBUpdate:
             print(f"ERROR CALC IMPLIED VOL: DATE {calculation_date} for {option_price[2]} : {e}")
             return None
 
+        # Now calculate Delta
         # The Market
         sigma = ql.SimpleQuote(volatility / 100)  # set volatility
         volatilityCurve = ql.BlackConstantVol(0, ql.NullCalendar(), ql.QuoteHandle(sigma), ql.Actual365Fixed())
@@ -511,13 +544,18 @@ class DeribitVolHistoryDBUpdate:
                                 option_vol_row[12], option_vol_row[13])
                                )
 
-    def _update_historic_vol_data(self) -> None:
-        """ Iterate through all the option & future price data that we have,
-            inserting any data missing from the Vol History table
+    def _process_year_month(self, year: int, month: int) -> None:
+        """ Process the price data for the given year and month to find implied vols for options
         """
 
-        future_curves, missing_option_vols = self._get_missing_historic_vols()
 
+
+        future_curves, missing_option_vols = self._get_missing_historic_vols(year, month)
+
+        if not future_curves:
+            return
+
+        print("PROCESSING YEAR", year, "MONTH", month)
         # print("FUTURE KEYS", list(future_curves.keys())[:50])
 
         failed = 0
@@ -547,19 +585,35 @@ class DeribitVolHistoryDBUpdate:
             if (i + 1) % 1000 == 0:
                 # Commit updates as we go along...
                 self.db_connection.commit()
-                print("PROCESSED VOLS", i+1,  "out of", len(missing_option_vols), "with", succeded, "writes and", failed, "skipped (term=0 or vol>400)")
+                # print("PROCESSED VOLS", i + 1, "out of", len(missing_option_vols), "with", succeded, "writes and",
+                #       failed, "skipped (term=0 or vol>400)")
 
         # Finish off any residual commits
         self.db_connection.commit()
         print("PROCESSED VOLS", len(missing_option_vols), "out of", len(missing_option_vols))
-        print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (probably term=0 or vol>400)")
+        print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (probably already existing, term=0 or vol>400)")
 
-        return
+    def _update_historic_vol_data(self) -> None:
+        """ Iterate through all the option & future price data that we have,
+            inserting any data missing from the Vol History table
+        """
+
+        years = [2019, 2020, 2021, 2022, 2023]
+        months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+        for year in years:
+            for month in months:
+                self._process_year_month(year, month)
+
 
 
 if __name__ == "__main__":
 
+    print("STARTING HISTORIC VOL UPDATES")
+
     deribit_history = DeribitVolHistoryDBUpdate()
 
     deribit_history._update_historic_vol_data()
+
+    print("FINISHED HISTORIC VOL UPDATES")
 
