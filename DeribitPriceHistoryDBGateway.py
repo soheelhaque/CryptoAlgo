@@ -406,4 +406,4 @@ if __name__ == "__main__":
     DeribitPriceHistoryDBGateway()._process_historic_ohlcv()
 
     # Update Vol History for any new price data
-    DeribitVolHistoryDBUpdate()._update_historic_vol_data()
+    DeribitVolHistoryDBUpdate()._update_historic_vol_data(recent=False)

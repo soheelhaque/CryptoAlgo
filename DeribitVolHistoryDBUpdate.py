@@ -593,13 +593,19 @@ class DeribitVolHistoryDBUpdate:
         print("PROCESSED VOLS", len(missing_option_vols), "out of", len(missing_option_vols))
         print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (probably already existing, term=0 or vol>400)")
 
-    def _update_historic_vol_data(self) -> None:
+    def _update_historic_vol_data(self, recent=True) -> None:
         """ Iterate through all the option & future price data that we have,
             inserting any data missing from the Vol History table
+
+            :param recent: defaults to true, to only calculate figures for year 2023
         """
 
-        years = [2017, 2018, 2019, 2020, 2021, 2022, 2023]
+        years = [2023]
         months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+        if not recent:
+            years = [2017, 2018, 2019, 2020, 2021, 2022, 2023]
+            months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
         for year in years:
             for month in months:

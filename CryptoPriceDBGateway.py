@@ -209,8 +209,6 @@ def process_ohlcv_price(db_cursor, db_connection, markets):
     update_markets(markets, db_connection, db_cursor)
 
 
-
-
 if __name__ == "__main__":
 
     db_config: dict = {}
@@ -255,4 +253,4 @@ if __name__ == "__main__":
         logger.info('Postgres connection is closed.')
 
     # Now update Vol History for any new prices
-    DeribitVolHistoryDBUpdate()._update_historic_vol_data()
+    DeribitVolHistoryDBUpdate()._update_historic_vol_data(recent=True)
