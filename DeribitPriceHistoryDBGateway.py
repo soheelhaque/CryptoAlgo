@@ -177,7 +177,7 @@ class DeribitPriceHistoryDBGateway:
         expiry_timestamp = market['expiry_timestamp']
         if expiry_timestamp is None:
             expiry_timestamp = datetime.utcnow().timestamp()
-            print("EXPIRY NOW", expiry_timestamp)
+            # print("EXPIRY NOW", expiry_timestamp)
 
         # expiry_timestamp = 1681804379000
 
@@ -267,7 +267,7 @@ class DeribitPriceHistoryDBGateway:
         historic_future_prices = {}
 
         for future in historic_instruments['futures']:
-            print("FUTURE", future)
+            # print("FUTURE", future)
             if future['symbol'].split('-')[1].startswith(period):
                 # print("FUTURE HISTORY", future['symbol'])
                 time.sleep(0.02)
