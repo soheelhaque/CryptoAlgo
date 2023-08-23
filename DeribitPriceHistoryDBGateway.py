@@ -383,9 +383,6 @@ class DeribitPriceHistoryDBGateway:
 
     def _process_historic_ohlcv(self, run_year=None, run_month=None):
 
-        historic_instruments = self._get_option_and_future_instruments()
-        # print("HISTORIC INSTRUMENTS", historic_instruments)
-
         years = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
         months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
@@ -397,7 +394,10 @@ class DeribitPriceHistoryDBGateway:
             years = [run_year]
             months = [run_month]
 
-        logger.info(f"STARTING DeribitPriceHistory: years: {years} months: {months}")
+        self.info_logger(f"STARTING DeribitPriceHistory: years: {years} months: {months}")
+
+        historic_instruments = self._get_option_and_future_instruments()
+        # print("HISTORIC INSTRUMENTS", historic_instruments)
 
         # loop per year/month
         for year in years:
