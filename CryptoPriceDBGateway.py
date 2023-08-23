@@ -252,5 +252,10 @@ if __name__ == "__main__":
             db_connection.close()
         logger.info('Postgres connection is closed.')
 
+    now = datetime.now()
+
+    year = now.year
+    month = now.month
+
     # Now update Vol History for any new prices
-    DeribitVolHistoryDBUpdate()._update_historic_vol_data(recent=True)
+    DeribitVolHistoryDBUpdate()._update_historic_vol_data(run_year=year, run_month=month)

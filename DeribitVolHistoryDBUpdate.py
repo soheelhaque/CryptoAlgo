@@ -1,9 +1,22 @@
-import time
 import tomli
-import requests
 from datetime import datetime
 import psycopg2
 import QuantLib as ql
+import logging, time, sys, getopt
+import logging.handlers as handlers
+
+
+logger = logging.getLogger('DERIBIT VOL UPDATER')
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+logHandler = handlers.RotatingFileHandler('deribit_vol_updater.log', maxBytes=50000, backupCount=5)
+logHandler.setLevel(logging.INFO)
+
+logHandler.setFormatter(formatter)
+
+logger.addHandler(logHandler)
 
 
 class DeribitVolHistoryDBUpdate:
@@ -343,8 +356,8 @@ class DeribitVolHistoryDBUpdate:
             # print("existing", calc_date, option_price[2], future_key)
             missing_option_vols.append(option_price)
 
-        print("VOL ANALYSIS: OUT OF", len(option_prices), "PRICES", exists_count, "VOLS ALREADY EXIST,", missing_count,"VOLS ARE MISSING")
-        print("WILL PROCESS:", len(missing_option_vols), "SKIPPING:",  term_count, "HAVE TERM ZERO, AND", key_count, "HAVE NO FUTURES PRICES" )
+        # print("VOL ANALYSIS: OUT OF", len(option_prices), "PRICES", exists_count, "VOLS ALREADY EXIST,", missing_count,"VOLS ARE MISSING")
+        self.info_logger(f"WILL PROCESS: {len(missing_option_vols)} SKIPPING: {term_count} HAVE TERM ZERO, AND {key_count} HAVE NO FUTURES PRICES" )
 
         return future_curves, missing_option_vols
 
@@ -555,7 +568,7 @@ class DeribitVolHistoryDBUpdate:
         if not future_curves:
             return
 
-        print("PROCESSING YEAR", year, "MONTH", month)
+        self.info_logger(f"PROCESSING YEAR {year} MONTH {month}")
         # print("FUTURE KEYS", list(future_curves.keys())[:50])
 
         failed = 0
@@ -590,36 +603,81 @@ class DeribitVolHistoryDBUpdate:
 
         # Finish off any residual commits
         self.db_connection.commit()
-        print("PROCESSED VOLS", len(missing_option_vols), "out of", len(missing_option_vols))
-        print("TOTAL OF", succeded, "WRITES AND", failed, "SKIPPED (probably already existing, term=0 or vol>400)")
+        # print("PROCESSED VOLS", len(missing_option_vols), "out of", len(missing_option_vols))
+        self.info_logger(f"TOTAL OF {succeded} WRITES AND {failed} SKIPPED (probably already existing, term=0 or vol>400)")
 
-    def _update_historic_vol_data(self, recent=True) -> None:
+    def info_logger(self, message):
+
+        logger.info(message)
+        print("LOG", message)
+
+    def _update_historic_vol_data(self, run_year: int=None, run_month: int=None) -> None:
         """ Iterate through all the option & future price data that we have,
             inserting any data missing from the Vol History table
 
             :param recent: defaults to true, to only calculate figures for year 2023
         """
 
-        years = [2023]
+        years = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
         months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
-        if not recent:
-            years = [2017, 2018, 2019, 2020, 2021, 2022, 2023]
+        if run_year and not run_month:
+            years = [run_year]
             months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+        if run_year and run_month:
+            years = [run_year]
+            months = [run_month]
+
+        self.info_logger(f"STARTING DeribitVolUpdate: years: {years} months: {months}")
 
         for year in years:
             for month in months:
                 self._process_year_month(year, month)
 
 
+def get_args(argv):
+
+    opts, args = getopt.getopt(argv,"-hy:m:", ["year=", "month="])
+
+    year = None
+    month = None
+
+    for opt, arg in opts:
+        if opt == '-h':
+            print ('python3 -m DeribitPriceHistoryDBGateway -h -y <2023> -m <6>')
+            sys.exit()
+
+        if opt in ("-y", "--year"):
+            try:
+                year = int(arg)
+            except Exception as e:
+                print(f'error {e}; year must be format <2023>')
+                sys.exit()
+
+        if opt in ("-m", "--month"):
+            try:
+                month = int(arg)
+            except Exception as e:
+                print(f'error {e}; month must be format <8>')
+                sys.exit()
+
+    if month and not year:
+        print(f'error; month can only be provided if year is also provided')
+        sys.exit()
+
+    return year, month
+
 
 if __name__ == "__main__":
 
-    print("STARTING HISTORIC VOL UPDATES")
+    year, month = get_args(sys.argv[1:])
+
+    # print("STARTING HISTORIC VOL UPDATES")
 
     deribit_history = DeribitVolHistoryDBUpdate()
 
-    deribit_history._update_historic_vol_data()
+    deribit_history._update_historic_vol_data(year, month)
 
-    print("FINISHED HISTORIC VOL UPDATES")
+    # print("FINISHED HISTORIC VOL UPDATES")
 

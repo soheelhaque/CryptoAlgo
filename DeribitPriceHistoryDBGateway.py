@@ -1,9 +1,23 @@
-import time
 import tomli
 import requests
 from datetime import datetime
 import psycopg2
 from DeribitVolHistoryDBUpdate import DeribitVolHistoryDBUpdate
+import logging, time, sys, getopt
+import logging.handlers as handlers
+
+
+logger = logging.getLogger('DERIBIT PRICE HISTORY')
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+logHandler = handlers.RotatingFileHandler('deribit_price_history.log', maxBytes=50000, backupCount=5)
+logHandler.setLevel(logging.INFO)
+
+logHandler.setFormatter(formatter)
+
+logger.addHandler(logHandler)
 
 
 class DeribitPriceHistoryDBGateway:
@@ -253,9 +267,9 @@ class DeribitPriceHistoryDBGateway:
         historic_future_prices = {}
 
         for future in historic_instruments['futures']:
-
+            print("FUTURE", future)
             if future['symbol'].split('-')[1].startswith(period):
-                print("FUTURE HISTORY", future['symbol'])
+                # print("FUTURE HISTORY", future['symbol'])
                 time.sleep(0.02)
 
                 future_history = self._get_ohlcv_day_data(future)
@@ -356,32 +370,43 @@ class DeribitPriceHistoryDBGateway:
 
             if (i + 1) % 1000 == 0:
                 self.db_connection.commit()
-                print("COMMITTING PRICES", rowcount, "after", i+1, "out of", len(historic_prices_data_table))
+                self.info_logger("COMMITTING PRICES {rowcount} after {i+1} out of {len(historic_prices_data_table)}")
 
         self.db_connection.commit()
-        print("COMMITTED PRICES", rowcount, "out of", len(historic_prices_data_table))
+        self.info_logger("COMMITTING PRICES {rowcount} out of {len(historic_prices_data_table)}")
         return rowcount
 
-    def _process_historic_ohlcv(self):
+    def info_logger(self, message):
+
+        logger.info(message)
+        print("LOG", message)
+
+    def _process_historic_ohlcv(self, run_year=None, run_month=None):
 
         historic_instruments = self._get_option_and_future_instruments()
         # print("HISTORIC INSTRUMENTS", historic_instruments)
 
+        years = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+        months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+        if run_year and not run_month:
+            years = [run_year]
+            months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+        if run_year and run_month:
+            years = [run_year]
+            months = [run_month]
+
+        logger.info(f"STARTING DeribitPriceHistory: years: {years} months: {months}")
+
         # loop per year/month
-        # years = ['17', '18', '19' , '20', '21', '22', '23']
-        # months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
-        years = ['23']
-        months = ['07', '08', '09', '10', '11', '12']
         for year in years:
             for month in months:
-                period = year + month
-                print("PROCESSING PERIOD YYMM", period)
+                period = str(year)[-2:] + f"{month:02}"
+                self.info_logger(f"PROCESSING PERIOD YYMM {period}")
                 historic_prices = self._get_option_and_future_prices(historic_instruments, period)
-                print("PROCESSING PRICES", "futures count:", len(historic_prices['futures']), "options count:", len(historic_prices['options']))
-                # print("HISTORIC PRICES", historic_prices)
-                # Push the historic price data to the database
+                self.info_logger(f"PROCESSING PRICES futures count: {len(historic_prices['futures'])} options count: {len(historic_prices['options'])}")
                 self._push_historic_prices_to_db(historic_prices)
-
         return
 
     def check_ohlcv_price_table_exists(self):
@@ -400,10 +425,45 @@ class DeribitPriceHistoryDBGateway:
                     ) timestamp(ts);''')
 
 
+def get_args(argv):
+
+    opts, args = getopt.getopt(argv,"-hy:m:", ["year=", "month="])
+
+    year = None
+    month = None
+
+    for opt, arg in opts:
+        if opt == '-h':
+            print ('python3 -m DeribitPriceHistoryDBGateway -h -y <2023> -m <6>')
+            sys.exit()
+
+        if opt in ("-y", "--year"):
+            try:
+                year = int(arg)
+            except Exception as e:
+                print(f'error {e}; year must be format <2023>')
+                sys.exit()
+
+        if opt in ("-m", "--month"):
+            try:
+                month = int(arg)
+            except Exception as e:
+                print(f'error {e}; month must be format <8>')
+                sys.exit()
+
+    if month and not year:
+        print(f'error; month can only be provided if year is also provided')
+        sys.exit()
+
+    return year, month
+
+
 if __name__ == "__main__":
 
+    year, month = get_args(sys.argv[1:])
+
     # Insert any Missing / Expired prices
-    DeribitPriceHistoryDBGateway()._process_historic_ohlcv()
+    DeribitPriceHistoryDBGateway()._process_historic_ohlcv(year, month)
 
     # Update Vol History for any new price data
-    DeribitVolHistoryDBUpdate()._update_historic_vol_data(recent=False)
+    DeribitVolHistoryDBUpdate()._update_historic_vol_data(year, month)
