@@ -370,10 +370,10 @@ class DeribitPriceHistoryDBGateway:
 
             if (i + 1) % 1000 == 0:
                 self.db_connection.commit()
-                self.info_logger("COMMITTING PRICES {rowcount} after {i+1} out of {len(historic_prices_data_table)}")
+                self.info_logger(f"COMMITTING PRICES {rowcount} after {i+1} out of {len(historic_prices_data_table)}")
 
         self.db_connection.commit()
-        self.info_logger("COMMITTING PRICES {rowcount} out of {len(historic_prices_data_table)}")
+        self.info_logger(f"COMMITTING PRICES {rowcount} out of {len(historic_prices_data_table)}")
         return rowcount
 
     def info_logger(self, message):
