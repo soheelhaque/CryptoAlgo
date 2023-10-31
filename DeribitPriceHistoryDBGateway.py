@@ -205,26 +205,26 @@ class DeribitPriceHistoryDBGateway:
 
         return response.json()['result']
 
-    def _get_tick_implied_vols(self, option_name, tick, price_data):
-        # print("GET IMPLIED VOLS", option_name, tick, price_data)
-
-        option = price_data['option']
-        future = price_data['future']
-
-        calculation_date = option['calculation_date']
-        strike = option['strike']
-        expiry = option['expiry']
-        call_put = option['option_type']
-
-        prices = ['open', 'high', 'low', 'close']
-
-        for price in prices:
-            underlying = strike / future[price]
-            mark_price = option[price]
-            vol_price = self._calc_implied_vol(strike, underlying, calculation_date, expiry, mark_price, call_put)
-            # print("GOT IMPLIED VOLS", option_name, price, vol_price, strike, underlying, calculation_date, expiry, mark_price, call_put)
-
-            option[price + "_vol"] = vol_price
+    # def _get_tick_implied_vols(self, option_name, tick, price_data):
+    #     # print("GET IMPLIED VOLS", option_name, tick, price_data)
+    #
+    #     option = price_data['option']
+    #     future = price_data['future']
+    #
+    #     calculation_date = option['calculation_date']
+    #     strike = option['strike']
+    #     expiry = option['expiry']
+    #     call_put = option['option_type']
+    #
+    #     prices = ['open', 'high', 'low', 'close']
+    #
+    #     for price in prices:
+    #         underlying = strike / future[price]
+    #         mark_price = option[price]
+    #         vol_price = self._calc_implied_vol(strike, underlying, calculation_date, expiry, mark_price, call_put)
+    #         # print("GOT IMPLIED VOLS", option_name, price, vol_price, strike, underlying, calculation_date, expiry, mark_price, call_put)
+    #
+    #         option[price + "_vol"] = vol_price
 
     def _get_option_and_future_instruments(self):
 

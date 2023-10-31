@@ -1,5 +1,5 @@
 import tomli
-from datetime import datetime
+from datetime import datetime, timedelta
 import psycopg2
 import QuantLib as ql
 import logging, time, sys, getopt
@@ -415,15 +415,15 @@ class DeribitVolHistoryDBUpdate:
             mark_price = option_price[6]
         else:
             mark_price = option_price[9]
-        call_put = option_price[2].split('-')[3]
 
+        call_put = option_price[2].split('-')[3]
 
         # print("CALC IMPLIED VOL FOR DATE", calculation_date, 'EXPIRY', expiry_date, 'STRIKE', strike, 'FUTURE',
         #       underlying_price, 'MARK', mark_price, 'type', call_put)
 
         # Just in case!
         if underlying_price <= 0:
-            return None
+            return []
 
         option_type = ql.Option.Call
         if call_put == "P":
@@ -434,6 +434,10 @@ class DeribitVolHistoryDBUpdate:
             return given_date.day, given_date.month, given_date.year
 
         today = ql.Date(*_date_split(calculation_date))
+        if oh_flag == 'close':
+            # note that 'close' calculation date is 24hrs after the 'open' calculation date.
+            today = ql.Date(*_date_split(calculation_date + timedelta(days=1)))
+
         expiry = ql.Date(*_date_split(expiry_date))
 
         # set calc date
@@ -443,7 +447,7 @@ class DeribitVolHistoryDBUpdate:
                                    ql.EuropeanExercise(expiry))
         # Calculate Implied Vol
         # The Market
-        u = ql.SimpleQuote(underlying_price)  # set todays value of the underlying
+        u = ql.SimpleQuote(underlying_price)  # set today's value of the underlying
         r = ql.SimpleQuote(risk_free_rate / 100)  # set risk-free rate
         sigma = ql.SimpleQuote(0.5)  # set volatility
         riskFreeCurve = ql.FlatForward(0, ql.NullCalendar(), ql.QuoteHandle(r), ql.Actual360())
@@ -461,10 +465,10 @@ class DeribitVolHistoryDBUpdate:
 
             if 'root not' in str(e):
                 # Vol exceeds bounds <0.0001, > 400.00
-                return None
+                return []
 
             print(f"ERROR CALC IMPLIED VOL: DATE {calculation_date} for {option_price[2]} : {e}")
-            return None
+            return []
 
         # Now calculate Delta
         # The Market
@@ -483,7 +487,7 @@ class DeribitVolHistoryDBUpdate:
             delta = self._delta_as_float(option.delta())
         except RuntimeError as e:
             print(f"ERROR CALC DELTA: DATE {calculation_date} for {option_price[2]}: {e}")
-            return None
+            return []
 
         # Given we have just priced the option, we could compare the usd price we get with
         # the token price passed in to see if they are within some sort of tolerance.
@@ -528,6 +532,10 @@ class DeribitVolHistoryDBUpdate:
                 return None
 
             vol_data += vol_strike_delta
+
+            if term == 1:
+                vol_data += vol_strike_delta
+                break
 
         vol_data.append(term)
 
@@ -613,9 +621,7 @@ class DeribitVolHistoryDBUpdate:
 
     def _update_historic_vol_data(self, run_year: int=None, run_month: int=None) -> None:
         """ Iterate through all the option & future price data that we have,
-            inserting any data missing from the Vol History table
-
-            :param recent: defaults to true, to only calculate figures for year 2023
+            inserting any data missing from the Vol History table -y
         """
 
         years = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
