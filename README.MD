@@ -19,17 +19,26 @@ And it will update the Vol historic data as well, by using the price history to 
 
         python CryptoPriceDBGateway.py
 
-At this point you should have plenty of historical price and implied volatility data in the database from both binance and deribit.
+At this point you should have plenty of historical price and implied volatility data in the database from both binance and deribit. 
+The script automatically invokes the implied vol calculations.
 
 Note: this script is intended to be run on a daily basis; in which case history is maintained for all products.
 
-If you require the history of products that are no longer traded e.g. expired options, then you need to fill in that history.
+If you require the history of products that are no longer traded e.g. expired options, then you need to back-fill history using a separate
+script as mentioned below.
+
+## Generating Vol Data in isolation
+It is possible to generate the vol data from the price data, without having to re-run the price feed.
+
+   python3 -m DeribitVolHistoryDBUpdate
+
+Without parameters, the module will fill in all missing historic data for all years and months, given the available price data.
 
 # Filling in Historic Price Data
 It is known that historic products (ie those that have already expired) do not get included within the CCXT historic price feed.
 That feed only includes history for products that are still tradeable.
 This is mostly an issue for Deribit, where we have lots of options and futures that expire all the time, but we need them to get meaningful data on historic implied volatilities.
-The 'back fill' of deribit data for products that are already expired may be required if the above script is not run every day or
+The 'back-fill' of deribit data for products that are already expired may be required if the above script is not run every day or
 there is a need to initialise a new database with historic data.
 
 This script is meant to only be run once, at initialisation, or exceptionally if there is a gap in the live price feed above.
@@ -47,6 +56,8 @@ This script is automatically executed when either the live prices or historic de
 But, it can be run separately if required.
 
       python DeribitVolHistoryUpdate.py
+
+
 
 # Database Migrations
 Crypto Algo also contains the logic for maintaining the correct database version.
