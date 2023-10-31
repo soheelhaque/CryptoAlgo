@@ -1,2 +1,4 @@
 # Run CryptoAlgo daily at 10am
 0 10 * * * cd /home/ec2-user/CryptoAlgo && venv/bin/python3 CryptoPriceDBGateway.py > /dev/null
+# Run Metrics update daily at 11am (should be in DQTools project?)
+0 11 * * * cd /home/ec2-user/DQCryptoAPI && venv/bin/python3 -m dq.calculate_metrics.calculate_vol_metrics > /dev/null
